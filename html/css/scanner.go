@@ -102,6 +102,7 @@ redo:
 		c = s.Source.GetRune()
 	}
 
+	//println(fmt.Sprintf("Next() c=%s", string(c)))
 	switch c {
 	case -1:
 		if err := s.Source.Error(); err != nil {
@@ -177,10 +178,27 @@ redo:
 		s.Token = Comma
 
 	case '-':
-		// TODO
+		var p [3]rune
+		s.Source.PeekRunes(p[:])
+		if isDigit(p[0]) {
+			s.numeric(c)
+		} else if isIdent(p[0], p[1], p[2]) {
+			// TODO "reconsume the current input code point,
+			// consume an ident-like token, and return it"
+		} else if p[0] == '-' && p[1] == '>' {
+			s.Token = CDC
+		} else {
+			s.Token = Delim
+			s.Literal = append(s.Literal, '-')
+		}
 
 	case '.':
-		// TODO
+		if isDigit(s.Source.PeekRune()) {
+			s.numeric(c)
+		} else {
+			s.Token = Delim
+			s.Literal = append(s.Literal, '.')
+		}
 
 	case '/':
 		if s.Source.PeekRune() == '*' {
@@ -255,7 +273,7 @@ redo:
 
 	default:
 		if isDigit(c) {
-			// TODO
+			s.numeric(c)
 		} else if isNameStartCodePoint(c) {
 			// CSS Syntax 4.3.3. Consume an ident-like token
 			s.Source.UngetRune()
@@ -397,16 +415,14 @@ func (s *Scanner) number(c rune) {
 			s.Source.GetRune()
 			s.Source.GetRune()
 
-			for {
-				if c := s.Source.PeekRune(); isDigit(c) {
-					s.Literal = appendRune(s.Literal, c)
-					s.Source.GetRune()
-				}
+			c = s.Source.GetRune()
+			for isDigit(c) {
+				s.Literal = appendRune(s.Literal, c)
+				c = s.Source.GetRune()
 			}
-		} else {
-			s.Source.UngetRune()
 		}
 	}
+	s.Source.UngetRune()
 }
 
 func (s *Scanner) url() {

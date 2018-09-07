@@ -9,11 +9,10 @@ import (
 var ErrMaxBufExceeded = errors.New("sourcereader: max buffer size exceeded")
 
 type SourceReader struct {
-	err    error
-	src    io.Reader
-	buf    []byte // buffer. len-off is avail bytes, cap never exceeded
-	off    int    // buf read offset
-	recOff int    // buf record offset
+	err error
+	src io.Reader
+	buf []byte // buffer. len-off is avail bytes, cap never exceeded
+	off int    // buf read offset
 
 	line, col, n int
 
@@ -39,16 +38,10 @@ func (r *SourceReader) fill() {
 	if r.lastRuneLen > 0 {
 		slideOff -= r.lastRuneLen // keep the last rune for unget
 	}
-	if r.recOff >= 0 && r.recOff < slideOff {
-		slideOff = r.recOff
-	}
 	if slideOff > 0 {
 		copy(r.buf, r.buf[slideOff:])
 		r.buf = r.buf[:len(r.buf)-slideOff]
 		r.off -= slideOff
-		if r.recOff > 0 {
-			r.recOff -= slideOff
-		}
 	}
 
 	if r.off == cap(r.buf) {
@@ -77,10 +70,8 @@ func (r *SourceReader) Error() error {
 }
 
 func (r *SourceReader) peek() (rn rune, size int) {
-	for r.off+utf8.UTFMax > len(r.buf) && !utf8.FullRune(r.buf[r.off:]) && r.err == nil {
-		r.fill()
-	}
-	if r.err != nil {
+	r.fillTo(0)
+	if r.off >= len(r.buf) {
 		return -1, 0
 	}
 
@@ -102,13 +93,18 @@ func (r *SourceReader) PeekRune() rune {
 	return rn
 }
 
+func (r *SourceReader) fillTo(peekOff int) {
+	for r.off+peekOff+utf8.UTFMax > len(r.buf) && !utf8.FullRune(r.buf[r.off+peekOff:]) && r.err == nil {
+		r.fill()
+	}
+}
+
 func (r *SourceReader) PeekRunes(runes []rune) error {
-	off := r.off
+	peekOff := 0
 	for i := range runes {
-		for off+utf8.UTFMax > len(r.buf) && !utf8.FullRune(r.buf[off:]) && r.err == nil {
-			r.fill()
-		}
-		if r.err != nil {
+		r.fillTo(peekOff)
+		off := r.off + peekOff
+		if off >= len(r.buf) {
 			for i < len(runes) {
 				runes[i] = -1
 				i++
@@ -138,7 +134,7 @@ func (r *SourceReader) GetRune() rune {
 	//println(fmt.Sprintf("GetRune rn=%s, size=%d", string(rn), size))
 
 	r.lastRuneLen = -1
-	if r.err != nil {
+	if rn == -1 {
 		return -1
 	}
 
@@ -181,30 +177,4 @@ func (r *SourceReader) UngetRune() {
 // Column is a byte offset from the last '\n'.
 func (r *SourceReader) Pos() (line, col, n int) {
 	return r.line, r.col, r.n
-}
-
-func (r *SourceReader) StartRecording() {
-	if r.recOff != -1 {
-		panic("SourceReader is already recording")
-	}
-	r.recHasNULL = false
-	r.recOff = r.off
-}
-
-func (r *SourceReader) EndRecording() []byte {
-	ret := r.buf[r.recOff:r.off]
-	if r.recHasNULL {
-		b := make([]byte, 0, len(ret)+1)
-		for _, c := range ret {
-			if c == 0 {
-				b = append(b, "\uFFFD"...)
-			} else {
-				b = append(b, c)
-			}
-		}
-		ret = b
-	}
-	r.recHasNULL = false
-	r.recOff = -1
-	return ret
 }
