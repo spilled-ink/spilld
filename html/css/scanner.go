@@ -643,9 +643,12 @@ func (s *Scanner) string(quote rune) {
 		}
 		switch c {
 		case -1:
+			s.Literal = s.Literal[:0]
+			s.Token = BadString
 			s.error("unterminated string")
 			return
 		case '\n':
+			s.Literal = s.Literal[:0]
 			s.Token = BadString
 			s.error("newline in string")
 			return

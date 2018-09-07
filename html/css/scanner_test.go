@@ -42,21 +42,30 @@ func (t token) String() string {
 	return fmt.Sprintf("{%s:%s %s %q %q 0x%x-0x%x}", t.pos, t.tok, t.sub, t.lit, t.unit, t.start, t.end)
 }
 
+type parseError struct {
+	pos pos
+	msg string
+}
+
 var scannerTests = []struct {
-	name  string
-	input string
-	want  []token
+	name    string
+	input   string
+	want    []token
+	wantErr []parseError
+	pos     bool
 }{
 	{
+		name:  "basic rule",
 		input: `img  { foo: "Hello, 世界"  /* not a real rule */ }`,
+		pos:   true,
 		want: []token{
-			{tok: Ident, lit: "img"},
-			{tok: LeftBrace},
-			{tok: Ident, lit: "foo"},
-			{tok: Colon},
-			{tok: String, lit: "Hello, 世界"},
-			{tok: RightBrace},
-			{tok: EOF},
+			{pos: pos{0, 0}, tok: Ident, lit: "img"},
+			{pos: pos{0, 5}, tok: LeftBrace},
+			{pos: pos{0, 7}, tok: Ident, lit: "foo"},
+			{pos: pos{0, 10}, tok: Colon},
+			{pos: pos{0, 12}, tok: String, lit: "Hello, 世界"},
+			{pos: pos{0, 51}, tok: RightBrace}, // note: byte offset, UTF-8
+			{pos: pos{0, 52}, tok: EOF},
 		},
 	},
 	{
@@ -135,6 +144,17 @@ var scannerTests = []struct {
 		},
 	},
 	{
+		name:  "bad string",
+		input: `name: "foo`,
+		want: []token{
+			{tok: Ident, lit: "name"},
+			{tok: Colon},
+			{tok: BadString},
+			{tok: EOF},
+		},
+		wantErr: []parseError{{pos{0, 10}, "unterminated string"}},
+	},
+	{
 		name:  "url tests",
 		input: `background:url("https://example.com/foo");`,
 		want: []token{
@@ -143,6 +163,41 @@ var scannerTests = []struct {
 			{tok: URL, lit: "https://example.com/foo"},
 			{tok: Semicolon},
 			{tok: EOF},
+		},
+	},
+	{
+		name:  "bad string",
+		input: `bg: url('https://example.com`,
+		want: []token{
+			{tok: Ident, lit: "bg"},
+			{tok: Colon},
+			{tok: BadURL},
+			{tok: EOF},
+		},
+		wantErr: []parseError{{pos{0, 28}, "unterminated string"}},
+	},
+	{
+		name: "multiline",
+		pos:  true,
+		input: `a {
+	text-decoration: none;
+      border: 1px solid #1df;
+}`,
+		want: []token{
+			{pos: pos{0, 0}, tok: Ident, lit: "a"},
+			{pos: pos{0, 2}, tok: LeftBrace},
+			{pos: pos{1, 1}, tok: Ident, lit: "text-decoration"},
+			{pos: pos{1, 16}, tok: Colon},
+			{pos: pos{1, 18}, tok: Ident, lit: "none"},
+			{pos: pos{1, 22}, tok: Semicolon},
+			{pos: pos{2, 6}, tok: Ident, lit: "border"}, // spaces, not tabs
+			{pos: pos{2, 12}, tok: Colon},
+			{pos: pos{2, 14}, tok: Dimension, sub: TypeFlagInteger, lit: "1", unit: "px"},
+			{pos: pos{2, 18}, tok: Ident, lit: "solid"},
+			{pos: pos{2, 24}, tok: Hash, lit: "1df"},
+			{pos: pos{2, 28}, tok: Semicolon},
+			{pos: pos{3, 0}, tok: RightBrace},
+			{pos: pos{3, 1}, tok: EOF},
 		},
 	},
 }
@@ -154,28 +209,39 @@ func TestScanner(t *testing.T) {
 			name = test.input
 		}
 		t.Run(name, func(t *testing.T) {
+			var gotErr []parseError
 			errh := func(line, col, n int, msg string) {
-				t.Errorf("%d:%d: (n=%d): %s", line, col, n, msg)
+				if len(test.wantErr) > 0 {
+					gotErr = append(gotErr, parseError{pos{line, col}, msg})
+				} else {
+					t.Errorf("%d:%d: (n=%d): %s", line, col, n, msg)
+				}
 			}
 			s := NewScanner(strings.NewReader(test.input), errh)
 			var got []token
 			for {
 				s.Next()
-				got = append(got, token{
-					//pos:   pos{s.Line, s.Col},
+				tok := token{
 					tok:   s.Token,
 					lit:   string(s.Literal),
 					sub:   s.TypeFlag,
 					unit:  string(s.Unit),
 					start: s.RangeStart,
 					end:   s.RangeEnd,
-				})
+				}
+				if test.pos {
+					tok.pos = pos{s.Line, s.Col}
+				}
+				got = append(got, tok)
 				if s.Token == EOF {
 					break
 				}
 			}
 			if !reflect.DeepEqual(got, test.want) {
-				t.Errorf("got  %v,\nwant %v", got, test.want)
+				t.Errorf("got:\n\t%v\nwant:\n\t%v", got, test.want)
+			}
+			if !reflect.DeepEqual(gotErr, test.wantErr) {
+				t.Errorf("got error:\n\t%v\nwant:\n\t%v", gotErr, test.wantErr)
 			}
 		})
 	}

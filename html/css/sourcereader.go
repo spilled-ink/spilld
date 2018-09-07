@@ -172,8 +172,10 @@ func (r *_SourceReader) UngetRune() {
 	r.n -= r.lastRuneLen
 	if r.col == 0 {
 		r.col = r.lastCol
+		r.line--
+	} else {
+		r.col -= r.lastRuneLen
 	}
-	r.line--
 	r.lastRuneLen = -1
 }
 
