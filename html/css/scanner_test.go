@@ -2,6 +2,8 @@ package css
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -31,6 +33,7 @@ func (t token) String() string {
 }
 
 var scannerTests = []struct {
+	name  string
 	input string
 	want  []token
 }{
@@ -87,6 +90,7 @@ var scannerTests = []struct {
 		},
 	},
 	{
+		name:  "unicode range tests",
 		input: `u+0102?? u+01-05 u+fa`,
 		want: []token{
 			{tok: UnicodeRange, start: 0x010200, end: 0x0102ff},
@@ -96,6 +100,7 @@ var scannerTests = []struct {
 		},
 	},
 	{
+		name:  "escape tests",
 		input: `"a\d\a" 5`,
 		want: []token{
 			{tok: String, lit: "a\r\n"},
@@ -103,14 +108,44 @@ var scannerTests = []struct {
 			{tok: EOF},
 		},
 	},
+	{
+		name:  "infinite ident loop (from go-fuzz)",
+		input: "\x80",
+		want: []token{
+			{tok: Ident, lit: "\uFFFD"},
+			{tok: EOF},
+		},
+	},
+	{
+		name:  "infinite + loop (from go-fuzz)",
+		input: "+",
+		want: []token{
+			{tok: Delim, lit: "+"},
+			{tok: EOF},
+		},
+	},
+	{
+		name:  "url tests",
+		input: `background:url("https://example.com/foo");`,
+		want: []token{
+			{tok: Ident, lit: "background"},
+			{tok: Colon},
+			{tok: URL, lit: "https://example.com/foo"},
+			{tok: Semicolon},
+			{tok: EOF},
+		},
+	},
 }
 
 func TestScanner(t *testing.T) {
 	for _, test := range scannerTests {
-		t.Run(test.input, func(t *testing.T) {
+		name := test.name
+		if name == "" {
+			name = test.input
+		}
+		t.Run(name, func(t *testing.T) {
 			errh := func(line, col, n int, msg string) {
 				t.Errorf("%d:%d: (n=%d): %s", line, col, n, msg)
-				//panic("foo")
 			}
 			s := NewScanner(strings.NewReader(test.input), errh)
 			var got []token
@@ -124,13 +159,49 @@ func TestScanner(t *testing.T) {
 					start: s.RangeStart,
 					end:   s.RangeEnd,
 				})
-				println("next, token=", fmt.Sprintf("%v", got[len(got)-1]))
 				if s.Token == EOF {
 					break
 				}
 			}
 			if !reflect.DeepEqual(got, test.want) {
 				t.Errorf("got  %v,\nwant %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestScannerFiles(t *testing.T) {
+	files, err := filepath.Glob("testdata/*.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		t.Run(file, func(t *testing.T) {
+			f, err := os.Open(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+
+			errh := func(line, col, n int, msg string) {
+				t.Errorf("%d:%d: (n=%d): %s", line, col, n, msg)
+			}
+			s := NewScanner(f, errh)
+			for {
+				s.Next()
+				tok := token{
+					tok:   s.Token,
+					lit:   string(s.Literal),
+					sub:   s.Subtype,
+					unit:  string(s.Unit),
+					start: s.RangeStart,
+					end:   s.RangeEnd,
+				}
+				t.Log(tok)
+
+				if s.Token == EOF {
+					break
+				}
 			}
 		})
 	}

@@ -107,7 +107,6 @@ redo:
 		c = s.Source.GetRune()
 	}
 
-	//println(fmt.Sprintf("Next() c=%s", string(c)))
 	switch c {
 	case -1:
 		if err := s.Source.Error(); err != nil {
@@ -174,7 +173,6 @@ redo:
 			s.Source.UngetRune()
 			s.numeric('+')
 		} else {
-			s.Source.UngetRune()
 			s.Token = Delim
 			s.Literal = append(s.Literal, '+')
 		}
@@ -617,6 +615,8 @@ func (s *Scanner) name() {
 				continue
 			}
 			fallthrough
+		case c == -1:
+			return
 		default:
 			s.Source.UngetRune()
 			return
@@ -686,7 +686,6 @@ func (s *Scanner) escape() rune {
 		// "Consume as many hex digits as possible, but no more than 5."
 		s.Source.UngetRune()
 		d, _ := s.hex(6)
-		println("escape d=", d)
 
 		// "If the next input code point is whitespace, consume it as well."
 		if isWhitespace(s.Source.PeekRune()) {
@@ -715,7 +714,6 @@ func isWhitespace(c rune) bool {
 func (s *Scanner) hex(maxCount int) (d uint32, count int) {
 	for count = 0; count < maxCount; count++ {
 		d0, isHex := asHex(s.Source.PeekRune())
-		println("d0=", d0)
 		if isHex {
 			s.Source.GetRune()
 			d <<= 4
