@@ -246,7 +246,14 @@ redo:
 		s.Token = LeftBrack
 
 	case '\\':
-		// TODO
+		if isEscape(c, s.Source.PeekRune()) {
+			s.Source.UngetRune()
+			s.identLike()
+		} else {
+			s.error("invalid escape character")
+			s.Token = Delim
+			s.Literal = append(s.Literal, '\\')
+		}
 
 	case ']':
 		s.Token = RightBrack

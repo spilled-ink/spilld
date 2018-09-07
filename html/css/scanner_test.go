@@ -59,7 +59,7 @@ var scannerTests = []struct {
 		},
 	},
 	{
-		input: `<!-- a || b |= c ~= @d *= e #f ua Ub -x -->`,
+		input: `<!-- a || b |= c ~= @d *= e #f ua Ub -x \g -->`,
 		want: []token{
 			{tok: CDO},
 			{tok: Ident, lit: "a"},
@@ -75,6 +75,7 @@ var scannerTests = []struct {
 			{tok: Ident, lit: "ua"},
 			{tok: Ident, lit: "Ub"},
 			{tok: Ident, lit: "-x"},
+			{tok: Ident, lit: "g"},
 			{tok: CDC},
 			{tok: EOF},
 		},
