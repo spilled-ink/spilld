@@ -2,7 +2,6 @@ package css
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"unicode/utf8"
 )
@@ -110,6 +109,10 @@ func (r *SourceReader) PeekRunes(runes []rune) error {
 			r.fill()
 		}
 		if r.err != nil {
+			for i < len(runes) {
+				runes[i] = -1
+				i++
+			}
 			return r.err
 		}
 
@@ -132,7 +135,7 @@ func (r *SourceReader) PeekRunes(runes []rune) error {
 // The error is available from the Error method.
 func (r *SourceReader) GetRune() rune {
 	rn, size := r.peek()
-	println(fmt.Sprintf("GetRune rn=%s, size=%d", string(rn), size))
+	//println(fmt.Sprintf("GetRune rn=%s, size=%d", string(rn), size))
 
 	r.lastRuneLen = -1
 	if r.err != nil {

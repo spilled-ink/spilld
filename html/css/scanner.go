@@ -7,7 +7,7 @@ import (
 
 type Token uint8
 
-//go:generate stringer -type Token -linecomment
+//go:generate stringer -type Token
 
 // CSS Tokens.
 // Defined in section 4 of https://www.w3.org/TR/css-syntax-3/#tokenization.
@@ -46,12 +46,26 @@ const (
 	RightBrace // }
 )
 
+type Subtype uint8
+
+//go:generate stringer -type Subtype
+
+// CSS Token subtypes.
+const (
+	SubtypeNone    Subtype = iota
+	SubtypeID              // Hash
+	SubtypeNumber          // Number
+	SubtypeInteger         // Number
+)
+
 type Scanner struct {
 	Source     *SourceReader
 	ErrHandler func(line, col, n int, msg string)
 
 	Token   Token
+	Subtype Subtype
 	Literal []byte
+	Unit    []byte // valid when Token == Dimension
 
 	nextIsBangDelim bool // extra lookahead
 }
@@ -77,7 +91,9 @@ func (s *Scanner) error(msg string) {
 // Next reads the next token to advance the scanner.
 func (s *Scanner) Next() {
 	s.Token = Unknown
+	s.Subtype = SubtypeNone
 	s.Literal = s.Literal[:0]
+	s.Unit = nil
 
 	// CSS Syntax 4.3.1 consume as much whitespace as possible
 redo:
@@ -110,6 +126,7 @@ redo:
 			s.Token = Hash
 			s.name()
 			// TODO: if s.Literal starts as an identifier, set type flag to "id"
+			//s.Subtype = ID
 		} else {
 			// "Otherwise, return a <delim-token> with its value
 			// set to the current input code point."
@@ -149,7 +166,7 @@ redo:
 		c = s.Source.GetRune()
 		if isNumber('+', c, s.Source.PeekRune()) {
 			s.Source.UngetRune()
-			s.number()
+			s.numeric('+')
 		} else {
 			s.Source.UngetRune()
 			s.Token = Delim
@@ -316,9 +333,80 @@ func isNonPrintable(c rune) bool {
 	return (0 <= c && c <= '\u0008') || c == '\u000b' || ('\u000e' <= c && c <= '\u001f') || c == '\u007f'
 }
 
-func (s *Scanner) number() {
-	// CSS Syntax 4.3.12. Consume a number
-	// TODO
+func isIdent(c0, c1, c2 rune) bool {
+	if c0 == '-' {
+		return isNameStartCodePoint(c1) || isEscape(c1, c2)
+	} else if isNameStartCodePoint(c0) {
+		return true
+	}
+	return isEscape(c0, c1)
+}
+
+func (s *Scanner) numeric(c rune) {
+	// CSS Syntax 4.3.2 "Consume a numeric token"
+	s.number(c)
+
+	var p [3]rune
+	s.Source.PeekRunes(p[:])
+	if isIdent(p[0], p[1], p[2]) {
+		s.Token = Dimension
+		lit := s.Literal
+		s.Literal = s.Literal[len(s.Literal):]
+		s.name()
+		s.Unit = s.Literal
+		s.Literal = lit
+	} else if p[0] == '%' {
+		s.Token = Percentage
+		s.Source.GetRune()
+	} else {
+		s.Token = Number
+	}
+}
+
+func (s *Scanner) number(c rune) {
+	// CSS Syntax 4.3.12 "Consume a number"
+	s.Token = Number
+	s.Subtype = SubtypeInteger
+
+	if c == '+' || c == '-' {
+		s.Literal = appendRune(s.Literal, c)
+		c = s.Source.GetRune()
+	}
+	for isDigit(c) {
+		s.Literal = appendRune(s.Literal, c)
+		c = s.Source.GetRune()
+	}
+	if c == '.' && isDigit(s.Source.PeekRune()) {
+		s.Subtype = SubtypeNumber
+		s.Literal = appendRune(s.Literal, '.')
+		s.Literal = appendRune(s.Literal, s.Source.GetRune())
+		c = s.Source.GetRune()
+		for isDigit(c) {
+			s.Literal = appendRune(s.Literal, c)
+			c = s.Source.GetRune()
+		}
+	}
+	if c == 'e' || c == 'E' {
+		var p [2]rune
+		s.Source.PeekRunes(p[:])
+
+		if isDigit(p[0]) || ((p[0] == '-' || p[0] == '+') && isDigit(p[1])) {
+			s.Subtype = SubtypeNumber
+			s.Literal = appendRune(s.Literal, p[0])
+			s.Literal = appendRune(s.Literal, p[1])
+			s.Source.GetRune()
+			s.Source.GetRune()
+
+			for {
+				if c := s.Source.PeekRune(); isDigit(c) {
+					s.Literal = appendRune(s.Literal, c)
+					s.Source.GetRune()
+				}
+			}
+		} else {
+			s.Source.UngetRune()
+		}
+	}
 }
 
 func (s *Scanner) url() {
@@ -405,8 +493,6 @@ func (s *Scanner) badURLRemnants() {
 }
 
 func (s *Scanner) name() {
-	s.Literal = s.Literal[:0]
-
 	for {
 		c := s.Source.GetRune()
 		switch {

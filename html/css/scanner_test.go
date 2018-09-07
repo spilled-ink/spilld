@@ -8,11 +8,21 @@ import (
 )
 
 type token struct {
-	tok Token
-	lit string
+	tok  Token
+	sub  Subtype
+	lit  string
+	unit string
 }
 
-func (t token) String() string { return fmt.Sprintf("{token:%s %q}", t.tok, t.lit) }
+func (t token) String() string {
+	if t.lit == "" && t.sub == SubtypeNone && t.unit == "" {
+		return fmt.Sprintf("tok:%s", t.tok)
+	}
+	if t.sub == SubtypeNone && t.unit == "" {
+		return fmt.Sprintf("{%s %q}", t.tok, t.lit)
+	}
+	return fmt.Sprintf("{%s %s %q %q}", t.tok, t.sub, t.lit, t.unit)
+}
 
 var scannerTests = []struct {
 	input string
@@ -21,13 +31,23 @@ var scannerTests = []struct {
 	{
 		input: `img  { foo: "Hello, 世界"  /* not a real rule */ }`,
 		want: []token{
-			{Ident, "img"},
-			{LeftBrace, ""},
-			{Ident, "foo"},
-			{Colon, ""},
-			{String, "Hello, 世界"},
-			{RightBrace, ""},
-			{EOF, ""},
+			{tok: Ident, lit: "img"},
+			{tok: LeftBrace},
+			{tok: Ident, lit: "foo"},
+			{tok: Colon},
+			{tok: String, lit: "Hello, 世界"},
+			{tok: RightBrace},
+			{tok: EOF},
+		},
+	},
+	{
+		input: `font-size: +2.3em;`,
+		want: []token{
+			{tok: Ident, lit: "font-size"},
+			{tok: Colon},
+			{tok: Dimension, sub: SubtypeNumber, lit: "+2.3", unit: "em"},
+			{tok: Semicolon},
+			{tok: EOF},
 		},
 	},
 }
@@ -41,10 +61,13 @@ func TestScanner(t *testing.T) {
 			s := NewScanner(strings.NewReader(test.input), errh)
 			var got []token
 			for {
-				println("calling Next")
 				s.Next()
-				got = append(got, token{tok: s.Token, lit: string(s.Literal)})
-				println(fmt.Sprintf("token=%v", s.Token))
+				got = append(got, token{
+					tok:  s.Token,
+					lit:  string(s.Literal),
+					sub:  s.Subtype,
+					unit: string(s.Unit),
+				})
 				if s.Token == EOF {
 					break
 				}
