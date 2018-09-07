@@ -130,23 +130,7 @@ redo:
 		s.string('"')
 
 	case '#':
-		c = s.source.GetRune()
-		hasName := isNameCodePoint(c) || isEscape(c, s.source.PeekRune())
-		s.source.UngetRune()
-
-		if hasName {
-			// "If the next input code point is a name code point
-			// or the next two input code points are a valid escape"
-			s.Token = Hash
-			s.name()
-			// TODO: if s.Literal starts as an identifier, set type flag to "id"
-			//s.TypeFlag = ID
-		} else {
-			// "Otherwise, return a <delim-token> with its value
-			// set to the current input code point."
-			s.Token = Delim
-			s.Literal = append(s.Literal, '#')
-		}
+		s.hash()
 
 	case '$':
 		if s.source.PeekRune() == '=' {
@@ -392,6 +376,26 @@ func isIdent(c0, c1, c2 rune) bool {
 	return isEscape(c0, c1)
 }
 
+func (s *Scanner) hash() {
+	var p [2]rune
+	s.source.PeekRunes(p[:])
+	hasName := isNameCodePoint(p[0]) || isEscape(p[0], p[1])
+
+	if hasName {
+		// "If the next input code point is a name code point
+		// or the next two input code points are a valid escape"
+		s.Token = Hash
+		s.name()
+		// TODO: if s.Literal starts as an identifier, set type flag to "id"
+		//s.TypeFlag = ID
+	} else {
+		// "Otherwise, return a <delim-token> with its value
+		// set to the current input code point."
+		s.Token = Delim
+		s.Literal = append(s.Literal, '#')
+	}
+}
+
 func (s *Scanner) unicodeRange() {
 	// CSS Syntax 4.3.6 "Consume a unicode-range token"
 
@@ -512,6 +516,7 @@ func (s *Scanner) number(c rune) {
 
 		if isDigit(p[0]) || ((p[0] == '-' || p[0] == '+') && isDigit(p[1])) {
 			s.TypeFlag = TypeFlagNumber
+			s.Literal = appendRune(s.Literal, c)
 			s.Literal = appendRune(s.Literal, p[0])
 			s.Literal = appendRune(s.Literal, p[1])
 			s.source.GetRune()

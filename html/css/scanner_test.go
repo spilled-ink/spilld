@@ -15,7 +15,10 @@ type pos struct {
 }
 
 func (p pos) String() string {
-	return fmt.Sprintf("%d:%d", p.line, p.col)
+	if p.line == 0 && p.col == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d:", p.line, p.col)
 }
 
 type token struct {
@@ -30,16 +33,16 @@ type token struct {
 
 func (t token) String() string {
 	if t.lit == "" && t.sub == TypeFlagNone && t.unit == "" && t.start == 0 && t.end == 0 {
-		return fmt.Sprintf("%s:tok:%s", t.pos, t.tok)
+		return fmt.Sprintf("%stok:%s", t.pos, t.tok)
 	}
 	if t.sub == TypeFlagNone && t.unit == "" && t.start == 0 && t.end == 0 {
-		return fmt.Sprintf("{%s:%s %q}", t.pos, t.tok, t.lit)
+		return fmt.Sprintf("{%s%s %q}", t.pos, t.tok, t.lit)
 	}
 	if t.start == 0 && t.end == 0 {
-		return fmt.Sprintf("{%s:%s %s %q %q}", t.pos, t.tok, t.sub, t.lit, t.unit)
+		return fmt.Sprintf("{%s%s %s %q %q}", t.pos, t.tok, t.sub, t.lit, t.unit)
 	}
 
-	return fmt.Sprintf("{%s:%s %s %q %q 0x%x-0x%x}", t.pos, t.tok, t.sub, t.lit, t.unit, t.start, t.end)
+	return fmt.Sprintf("{%s%s %s %q %q 0x%x-0x%x}", t.pos, t.tok, t.sub, t.lit, t.unit, t.start, t.end)
 }
 
 type parseError struct {
@@ -69,11 +72,11 @@ var scannerTests = []struct {
 		},
 	},
 	{
-		input: `font-size: +2.3em; border: 0; fraction: .1;`,
+		input: `font-size: +2.34em; border: 0; fraction: .1; e: 1e-10;`,
 		want: []token{
 			{tok: Ident, lit: "font-size"},
 			{tok: Colon},
-			{tok: Dimension, sub: TypeFlagNumber, lit: "+2.3", unit: "em"},
+			{tok: Dimension, sub: TypeFlagNumber, lit: "+2.34", unit: "em"},
 			{tok: Semicolon},
 			{tok: Ident, lit: "border"},
 			{tok: Colon},
@@ -82,6 +85,10 @@ var scannerTests = []struct {
 			{tok: Ident, lit: "fraction"},
 			{tok: Colon},
 			{tok: Number, sub: TypeFlagNumber, lit: ".1"},
+			{tok: Semicolon},
+			{tok: Ident, lit: "e"},
+			{tok: Colon},
+			{tok: Number, sub: TypeFlagNumber, lit: "1e-10"},
 			{tok: Semicolon},
 			{tok: EOF},
 		},
@@ -110,7 +117,7 @@ var scannerTests = []struct {
 	},
 	{
 		name:  "unicode range tests",
-		input: `u+0102?? u+01-05 u+fa`,
+		input: `u+0102?? u+01-05 u+Fa`,
 		want: []token{
 			{tok: UnicodeRange, start: 0x010200, end: 0x0102ff},
 			{tok: UnicodeRange, start: 0x01, end: 0x05},
@@ -144,6 +151,15 @@ var scannerTests = []struct {
 		},
 	},
 	{
+		name: "string newline",
+		input: `"foo\
+bar"`,
+		want: []token{
+			{tok: String, lit: "foo\nbar"},
+			{tok: EOF},
+		},
+	},
+	{
 		name:  "bad string",
 		input: `name: "foo`,
 		want: []token{
@@ -155,18 +171,41 @@ var scannerTests = []struct {
 		wantErr: []parseError{{pos{0, 10}, "unterminated string"}},
 	},
 	{
+		name: "bad string newline",
+		input: `name: "foo
+`,
+		want: []token{
+			{tok: Ident, lit: "name"},
+			{tok: Colon},
+			{tok: BadString},
+			{tok: EOF},
+		},
+		wantErr: []parseError{{pos{1, 0}, "newline in string"}},
+	},
+	{
+		name:  "bad comment",
+		input: `/* comment`,
+		want: []token{
+			{tok: EOF},
+		},
+		wantErr: []parseError{{pos{0, 10}, "unterminated comment"}},
+	},
+
+	{
 		name:  "url tests",
-		input: `background:url("https://example.com/foo");`,
+		input: `background:url("https://example.com/foo"), url( data:foo\A  );`,
 		want: []token{
 			{tok: Ident, lit: "background"},
 			{tok: Colon},
 			{tok: URL, lit: "https://example.com/foo"},
+			{tok: Comma},
+			{tok: URL, lit: "data:foo\n"},
 			{tok: Semicolon},
 			{tok: EOF},
 		},
 	},
 	{
-		name:  "bad string",
+		name:  "unterminated url",
 		input: `bg: url('https://example.com`,
 		want: []token{
 			{tok: Ident, lit: "bg"},
