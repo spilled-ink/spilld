@@ -186,6 +186,8 @@ redo:
 			// TODO "reconsume the current input code point,
 			// consume an ident-like token, and return it"
 		} else if p[0] == '-' && p[1] == '>' {
+			s.Source.GetRune()
+			s.Source.GetRune()
 			s.Token = CDC
 		} else {
 			s.Token = Delim
@@ -217,9 +219,9 @@ redo:
 		s.Token = Semicolon
 
 	case '<':
-		var runes [3]rune
-		err := s.Source.PeekRunes(runes[:])
-		if err == nil && runes[0] == '!' && runes[1] == '-' && runes[2] == '-' {
+		var p [3]rune
+		s.Source.PeekRunes(p[:])
+		if p[0] == '!' && p[1] == '-' && p[2] == '-' {
 			s.Source.GetRune()
 			s.Source.GetRune()
 			s.Source.GetRune()
@@ -230,7 +232,15 @@ redo:
 		}
 
 	case '@':
-		// TODO
+		var p [3]rune
+		s.Source.PeekRunes(p[:])
+		if isIdent(p[0], p[1], p[2]) {
+			s.name()
+			s.Token = AtKeyword
+		} else {
+			s.Token = Delim
+			s.Literal = append(s.Literal, '@')
+		}
 
 	case '[':
 		s.Token = LeftBrack
@@ -260,7 +270,17 @@ redo:
 		// TODO
 
 	case '|':
-		// TODO
+		switch s.Source.PeekRune() {
+		case '=':
+			s.Source.GetRune()
+			s.Token = DashMatch
+		case '|':
+			s.Source.GetRune()
+			s.Token = Column
+		default:
+			s.Token = Delim
+			s.Literal = append(s.Literal, '|')
+		}
 
 	case '~':
 		if s.Source.PeekRune() == '=' {

@@ -58,6 +58,23 @@ var scannerTests = []struct {
 			{tok: EOF},
 		},
 	},
+	{
+		input: `<!-- a || b |= c ~= @d *= e -->`,
+		want: []token{
+			{tok: CDO},
+			{tok: Ident, lit: "a"},
+			{tok: Column},
+			{tok: Ident, lit: "b"},
+			{tok: DashMatch},
+			{tok: Ident, lit: "c"},
+			{tok: IncludeMatch},
+			{tok: AtKeyword, lit: "d"},
+			{tok: SubstringMatch},
+			{tok: Ident, lit: "e"},
+			{tok: CDC},
+			{tok: EOF},
+		},
+	},
 }
 
 func TestScanner(t *testing.T) {
