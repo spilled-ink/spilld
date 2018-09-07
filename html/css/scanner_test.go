@@ -9,9 +9,19 @@ import (
 	"testing"
 )
 
+type pos struct {
+	line int
+	col  int
+}
+
+func (p pos) String() string {
+	return fmt.Sprintf("%d:%d", p.line, p.col)
+}
+
 type token struct {
+	pos   pos
 	tok   Token
-	sub   Subtype
+	sub   TypeFlag
 	lit   string
 	unit  string
 	start uint32
@@ -19,17 +29,17 @@ type token struct {
 }
 
 func (t token) String() string {
-	if t.lit == "" && t.sub == SubtypeNone && t.unit == "" && t.start == 0 && t.end == 0 {
-		return fmt.Sprintf("tok:%s", t.tok)
+	if t.lit == "" && t.sub == TypeFlagNone && t.unit == "" && t.start == 0 && t.end == 0 {
+		return fmt.Sprintf("%s:tok:%s", t.pos, t.tok)
 	}
-	if t.sub == SubtypeNone && t.unit == "" && t.start == 0 && t.end == 0 {
-		return fmt.Sprintf("{%s %q}", t.tok, t.lit)
+	if t.sub == TypeFlagNone && t.unit == "" && t.start == 0 && t.end == 0 {
+		return fmt.Sprintf("{%s:%s %q}", t.pos, t.tok, t.lit)
 	}
 	if t.start == 0 && t.end == 0 {
-		return fmt.Sprintf("{%s %s %q %q}", t.tok, t.sub, t.lit, t.unit)
+		return fmt.Sprintf("{%s:%s %s %q %q}", t.pos, t.tok, t.sub, t.lit, t.unit)
 	}
 
-	return fmt.Sprintf("{%s %s %q %q 0x%x-0x%x}", t.tok, t.sub, t.lit, t.unit, t.start, t.end)
+	return fmt.Sprintf("{%s:%s %s %q %q 0x%x-0x%x}", t.pos, t.tok, t.sub, t.lit, t.unit, t.start, t.end)
 }
 
 var scannerTests = []struct {
@@ -54,15 +64,15 @@ var scannerTests = []struct {
 		want: []token{
 			{tok: Ident, lit: "font-size"},
 			{tok: Colon},
-			{tok: Dimension, sub: SubtypeNumber, lit: "+2.3", unit: "em"},
+			{tok: Dimension, sub: TypeFlagNumber, lit: "+2.3", unit: "em"},
 			{tok: Semicolon},
 			{tok: Ident, lit: "border"},
 			{tok: Colon},
-			{tok: Number, sub: SubtypeInteger, lit: "0"},
+			{tok: Number, sub: TypeFlagInteger, lit: "0"},
 			{tok: Semicolon},
 			{tok: Ident, lit: "fraction"},
 			{tok: Colon},
-			{tok: Number, sub: SubtypeNumber, lit: ".1"},
+			{tok: Number, sub: TypeFlagNumber, lit: ".1"},
 			{tok: Semicolon},
 			{tok: EOF},
 		},
@@ -104,7 +114,7 @@ var scannerTests = []struct {
 		input: `"a\d\a" 5`,
 		want: []token{
 			{tok: String, lit: "a\r\n"},
-			{tok: Number, sub: SubtypeInteger, lit: "5"},
+			{tok: Number, sub: TypeFlagInteger, lit: "5"},
 			{tok: EOF},
 		},
 	},
@@ -152,9 +162,10 @@ func TestScanner(t *testing.T) {
 			for {
 				s.Next()
 				got = append(got, token{
+					//pos:   pos{s.Line, s.Col},
 					tok:   s.Token,
 					lit:   string(s.Literal),
-					sub:   s.Subtype,
+					sub:   s.TypeFlag,
 					unit:  string(s.Unit),
 					start: s.RangeStart,
 					end:   s.RangeEnd,
@@ -190,9 +201,10 @@ func TestScannerFiles(t *testing.T) {
 			for {
 				s.Next()
 				tok := token{
+					pos:   pos{s.Line, s.Col},
 					tok:   s.Token,
 					lit:   string(s.Literal),
-					sub:   s.Subtype,
+					sub:   s.TypeFlag,
 					unit:  string(s.Unit),
 					start: s.RangeStart,
 					end:   s.RangeEnd,

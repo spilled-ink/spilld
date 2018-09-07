@@ -6,9 +6,14 @@ import (
 	"unicode/utf8"
 )
 
-var ErrMaxBufExceeded = errors.New("sourcereader: max buffer size exceeded")
+// TODO: independent tests of _SourceReader
+// TODO: does this deserve its own package? is it generally interesting?
 
-type SourceReader struct {
+var _ErrMaxBufExceeded = errors.New("sourcereader: max buffer size exceeded")
+
+// _SourceReader reads runes from an io.Reader.
+// It provides methods designed for writing scanners.
+type _SourceReader struct {
 	err error
 	src io.Reader
 	buf []byte // buffer. len-off is avail bytes, cap never exceeded
@@ -22,17 +27,17 @@ type SourceReader struct {
 	lastCol     int // value of col for the previous line
 }
 
-func NewSourceReader(src io.Reader, maxBuf int) *SourceReader {
+func _NewSourceReader(src io.Reader, maxBuf int) *_SourceReader {
 	if maxBuf == 0 {
 		maxBuf = 4096
 	}
-	return &SourceReader{
+	return &_SourceReader{
 		src: src,
 		buf: make([]byte, 0, 4096),
 	}
 }
 
-func (r *SourceReader) fill() {
+func (r *_SourceReader) fill() {
 	// Slide unnecessary bytes to the beginning of the buffer to make space.
 	slideOff := r.off
 	if r.lastRuneLen > 0 {
@@ -45,7 +50,7 @@ func (r *SourceReader) fill() {
 	}
 
 	if r.off == cap(r.buf) {
-		r.err = ErrMaxBufExceeded // no space to fill
+		r.err = _ErrMaxBufExceeded // no space to fill
 		return
 	}
 
@@ -59,17 +64,17 @@ func (r *SourceReader) fill() {
 	}
 }
 
-// SetReplaceNULL configures the SourceReader to replace any '\0' runes with
+// SetReplaceNULL configures the _SourceReader to replace any '\0' runes with
 // the Unicode replacement character '\uFFFD'.
-func (r *SourceReader) SetReplaceNULL(v bool) {
+func (r *_SourceReader) SetReplaceNULL(v bool) {
 	r.replaceNULL = v
 }
 
-func (r *SourceReader) Error() error {
+func (r *_SourceReader) Error() error {
 	return r.err
 }
 
-func (r *SourceReader) peek() (rn rune, size int) {
+func (r *_SourceReader) peek() (rn rune, size int) {
 	r.fillTo(0)
 	if r.off >= len(r.buf) {
 		return -1, 0
@@ -88,18 +93,18 @@ func (r *SourceReader) peek() (rn rune, size int) {
 	return rn, size
 }
 
-func (r *SourceReader) PeekRune() rune {
+func (r *_SourceReader) PeekRune() rune {
 	rn, _ := r.peek()
 	return rn
 }
 
-func (r *SourceReader) fillTo(peekOff int) {
+func (r *_SourceReader) fillTo(peekOff int) {
 	for r.off+peekOff+utf8.UTFMax > len(r.buf) && !utf8.FullRune(r.buf[r.off+peekOff:]) && r.err == nil {
 		r.fill()
 	}
 }
 
-func (r *SourceReader) PeekRunes(runes []rune) error {
+func (r *_SourceReader) PeekRunes(runes []rune) error {
 	peekOff := 0
 	for i := range runes {
 		r.fillTo(peekOff)
@@ -129,7 +134,7 @@ func (r *SourceReader) PeekRunes(runes []rune) error {
 // GetRune reads a single UTF-8 encoded character.
 // If an I/O error occurs reading, ReadRune returns -1.
 // The error is available from the Error method.
-func (r *SourceReader) GetRune() rune {
+func (r *_SourceReader) GetRune() rune {
 	rn, size := r.peek()
 	//println(fmt.Sprintf("GetRune rn=%s, size=%d", string(rn), size))
 
@@ -158,7 +163,7 @@ func (r *SourceReader) GetRune() rune {
 
 // UngetRune unreads the last rune.
 // Only a single rune can be unread.
-func (r *SourceReader) UngetRune() {
+func (r *_SourceReader) UngetRune() {
 	if r.lastRuneLen < 0 {
 		r.err = errors.New("sourcereader: no rune to unread")
 		return
@@ -174,6 +179,6 @@ func (r *SourceReader) UngetRune() {
 
 // Pos reports the line/column position and total bytes of the last read rune.
 // Column is a byte offset from the last '\n'.
-func (r *SourceReader) Pos() (line, col, n int) {
+func (r *_SourceReader) Pos() (line, col, n int) {
 	return r.line, r.col, r.n
 }

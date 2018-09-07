@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 )
 
+// Token is a CSS Token type.
 type Token uint8
 
 //go:generate stringer -type Token
@@ -46,55 +47,61 @@ const (
 	RightBrace // }
 )
 
-type Subtype uint8
+// TypeFlag is a CSS Token type flag.
+type TypeFlag uint8
 
-//go:generate stringer -type Subtype
+//go:generate stringer -type TypeFlag
 
 // CSS Token subtypes.
 const (
-	SubtypeNone    Subtype = iota
-	SubtypeID              // Hash
-	SubtypeNumber          // Number
-	SubtypeInteger         // Number
+	TypeFlagNone    TypeFlag = iota
+	TypeFlagID               // Hash
+	TypeFlagNumber           // Number
+	TypeFlagInteger          // Number
 )
 
+// Scanner reads CSS tokens from a byte stream.
 type Scanner struct {
-	Source     *SourceReader
+	// ErrHandler is called when the tokenizer encounters a CSS parse error
+	// or the underlying io.Reader reports a non-EOF error.
 	ErrHandler func(line, col, n int, msg string)
 
 	// Token results
 	Token      Token
-	Subtype    Subtype
-	Literal    []byte
-	Unit       []byte // valid when Token == Dimension
-	RangeStart uint32 // valid when Token == UnicodeRange
-	RangeEnd   uint32 // valid when Token == UnicodeRange
+	TypeFlag   TypeFlag // for Hash, Numberr
+	Literal    []byte   // backing array reused when Next is called
+	Unit       []byte   // for Dimension, backing array reused when Next is called
+	RangeStart uint32   // for UnicodeRange
+	RangeEnd   uint32   // for UnicodeRange
+	Line       int      // line number at token beginning
+	Col        int      // column offset in bytes at token beginning
 
+	source          *_SourceReader
 	nextIsBangDelim bool // extra lookahead
 }
 
 func NewScanner(src io.Reader, errHandler func(line, col, n int, msg string)) *Scanner {
 	s := &Scanner{
-		Source:     NewSourceReader(src, 0),
+		source:     _NewSourceReader(src, 0),
 		ErrHandler: errHandler,
 		Literal:    make([]byte, 0, 128),
 	}
 
 	// CSS Syntax 3.3 replace NULL with Unicode replacement character
-	s.Source.SetReplaceNULL(true)
+	s.source.SetReplaceNULL(true)
 
 	return s
 }
 
 func (s *Scanner) error(msg string) {
-	line, col, n := s.Source.Pos()
+	line, col, n := s.source.Pos()
 	s.ErrHandler(line, col, n, msg)
 }
 
 // Next reads the next token to advance the scanner.
 func (s *Scanner) Next() {
 	s.Token = Unknown
-	s.Subtype = SubtypeNone
+	s.TypeFlag = TypeFlagNone
 	s.Literal = s.Literal[:0]
 	s.Unit = nil
 	s.RangeStart = 0
@@ -102,14 +109,16 @@ func (s *Scanner) Next() {
 
 	// CSS Syntax 4.3.1 consume as much whitespace as possible
 redo:
-	c := s.Source.GetRune()
+	s.Line, s.Col, _ = s.source.Pos()
+	c := s.source.GetRune()
 	for isWhitespace(c) {
-		c = s.Source.GetRune()
+		s.Line, s.Col, _ = s.source.Pos()
+		c = s.source.GetRune()
 	}
 
 	switch c {
 	case -1:
-		if err := s.Source.Error(); err != nil {
+		if err := s.source.Error(); err != nil {
 			if err != io.EOF {
 				s.error(err.Error())
 			}
@@ -121,9 +130,9 @@ redo:
 		s.string('"')
 
 	case '#':
-		c = s.Source.GetRune()
-		hasName := isNameCodePoint(c) || isEscape(c, s.Source.PeekRune())
-		s.Source.UngetRune()
+		c = s.source.GetRune()
+		hasName := isNameCodePoint(c) || isEscape(c, s.source.PeekRune())
+		s.source.UngetRune()
 
 		if hasName {
 			// "If the next input code point is a name code point
@@ -131,7 +140,7 @@ redo:
 			s.Token = Hash
 			s.name()
 			// TODO: if s.Literal starts as an identifier, set type flag to "id"
-			//s.Subtype = ID
+			//s.TypeFlag = ID
 		} else {
 			// "Otherwise, return a <delim-token> with its value
 			// set to the current input code point."
@@ -140,8 +149,8 @@ redo:
 		}
 
 	case '$':
-		if s.Source.PeekRune() == '=' {
-			s.Source.GetRune()
+		if s.source.PeekRune() == '=' {
+			s.source.GetRune()
 			s.Token = SuffixMatch
 		} else {
 			s.Token = Delim
@@ -159,8 +168,8 @@ redo:
 		s.Token = RightParen
 
 	case '*':
-		if s.Source.PeekRune() == '=' {
-			s.Source.GetRune()
+		if s.source.PeekRune() == '=' {
+			s.source.GetRune()
 			s.Token = SubstringMatch
 		} else {
 			s.Token = Delim
@@ -168,9 +177,9 @@ redo:
 		}
 
 	case '+':
-		c = s.Source.GetRune()
-		if isNumber('+', c, s.Source.PeekRune()) {
-			s.Source.UngetRune()
+		c = s.source.GetRune()
+		if isNumber('+', c, s.source.PeekRune()) {
+			s.source.UngetRune()
 			s.numeric('+')
 		} else {
 			s.Token = Delim
@@ -182,15 +191,15 @@ redo:
 
 	case '-':
 		var p [3]rune
-		s.Source.PeekRunes(p[:])
+		s.source.PeekRunes(p[:])
 		if isDigit(p[0]) {
 			s.numeric(c)
 		} else if isIdent(p[0], p[1], p[2]) {
-			s.Source.UngetRune()
+			s.source.UngetRune()
 			s.identLike()
 		} else if p[0] == '-' && p[1] == '>' {
-			s.Source.GetRune()
-			s.Source.GetRune()
+			s.source.GetRune()
+			s.source.GetRune()
 			s.Token = CDC
 		} else {
 			s.Token = Delim
@@ -198,7 +207,7 @@ redo:
 		}
 
 	case '.':
-		if isDigit(s.Source.PeekRune()) {
+		if isDigit(s.source.PeekRune()) {
 			s.numeric(c)
 		} else {
 			s.Token = Delim
@@ -206,8 +215,8 @@ redo:
 		}
 
 	case '/':
-		if s.Source.PeekRune() == '*' {
-			s.Source.GetRune()
+		if s.source.PeekRune() == '*' {
+			s.source.GetRune()
 			s.skipComment()
 			goto redo
 		} else {
@@ -223,11 +232,11 @@ redo:
 
 	case '<':
 		var p [3]rune
-		s.Source.PeekRunes(p[:])
+		s.source.PeekRunes(p[:])
 		if p[0] == '!' && p[1] == '-' && p[2] == '-' {
-			s.Source.GetRune()
-			s.Source.GetRune()
-			s.Source.GetRune()
+			s.source.GetRune()
+			s.source.GetRune()
+			s.source.GetRune()
 			s.Token = CDO
 		} else {
 			s.Token = Delim
@@ -236,7 +245,7 @@ redo:
 
 	case '@':
 		var p [3]rune
-		s.Source.PeekRunes(p[:])
+		s.source.PeekRunes(p[:])
 		if isIdent(p[0], p[1], p[2]) {
 			s.name()
 			s.Token = AtKeyword
@@ -249,8 +258,8 @@ redo:
 		s.Token = LeftBrack
 
 	case '\\':
-		if isEscape(c, s.Source.PeekRune()) {
-			s.Source.UngetRune()
+		if isEscape(c, s.source.PeekRune()) {
+			s.source.UngetRune()
 			s.identLike()
 		} else {
 			s.error("invalid escape character")
@@ -262,8 +271,8 @@ redo:
 		s.Token = RightBrack
 
 	case '^':
-		if s.Source.PeekRune() == '=' {
-			s.Source.GetRune()
+		if s.source.PeekRune() == '=' {
+			s.source.GetRune()
 			s.Token = PrefixMatch
 		} else {
 			s.Token = Delim
@@ -278,22 +287,22 @@ redo:
 
 	case 'U', 'u':
 		var p [2]rune
-		s.Source.PeekRunes(p[:])
+		s.source.PeekRunes(p[:])
 		if p[0] == '+' && (isHex(p[1]) || p[1] == '?') {
-			s.Source.GetRune() // consume '+'
+			s.source.GetRune() // consume '+'
 			s.unicodeRange()
 		} else {
-			s.Source.UngetRune()
+			s.source.UngetRune()
 			s.identLike()
 		}
 
 	case '|':
-		switch s.Source.PeekRune() {
+		switch s.source.PeekRune() {
 		case '=':
-			s.Source.GetRune()
+			s.source.GetRune()
 			s.Token = DashMatch
 		case '|':
-			s.Source.GetRune()
+			s.source.GetRune()
 			s.Token = Column
 		default:
 			s.Token = Delim
@@ -301,8 +310,8 @@ redo:
 		}
 
 	case '~':
-		if s.Source.PeekRune() == '=' {
-			s.Source.GetRune()
+		if s.source.PeekRune() == '=' {
+			s.source.GetRune()
 			s.Token = IncludeMatch
 		} else {
 			s.Token = Delim
@@ -313,7 +322,7 @@ redo:
 		if isDigit(c) {
 			s.numeric(c)
 		} else if isNameStartCodePoint(c) {
-			s.Source.UngetRune()
+			s.source.UngetRune()
 			s.identLike()
 		} else {
 			s.Token = Delim
@@ -391,8 +400,8 @@ func (s *Scanner) unicodeRange() {
 	d, i := s.hex(6)
 	numQM := 0
 	for i < 6 {
-		if s.Source.PeekRune() == '?' {
-			s.Source.GetRune()
+		if s.source.PeekRune() == '?' {
+			s.source.GetRune()
 			numQM++
 		} else {
 			break
@@ -417,9 +426,9 @@ func (s *Scanner) unicodeRange() {
 	s.RangeStart = d
 
 	var p [2]rune
-	s.Source.PeekRunes(p[:])
+	s.source.PeekRunes(p[:])
 	if p[0] == '-' && isHex(p[1]) {
-		s.Source.GetRune()
+		s.source.GetRune()
 		s.RangeEnd, _ = s.hex(6)
 		s.Token = UnicodeRange
 		return
@@ -434,19 +443,19 @@ func (s *Scanner) identLike() {
 	// CSS Syntax 4.3.3. Consume an ident-like token
 	s.name()
 
-	if len(s.Literal) == 3 && string(s.Literal) == "url" && s.Source.PeekRune() == '(' {
+	if len(s.Literal) == 3 && string(s.Literal) == "url" && s.source.PeekRune() == '(' {
 		// "If the returned string’s value is an ASCII
 		// case-insensitive match for "url", and the next
 		// input code point is U+0028 LEFT PARENTHESIS ((),
 		// consume it. Consume a url token, and return it."
-		s.Source.GetRune()
+		s.source.GetRune()
 		s.url()
-	} else if s.Source.PeekRune() == '(' {
+	} else if s.source.PeekRune() == '(' {
 		// "Otherwise, if the next input code point is
 		// U+0028 LEFT PARENTHESIS ((), consume it.
 		// Create a <function-token> with its value set
 		// to the returned string and return it.""
-		s.Source.GetRune()
+		s.source.GetRune()
 		s.Token = Function
 	} else {
 		s.Token = Ident
@@ -458,7 +467,7 @@ func (s *Scanner) numeric(c rune) {
 	s.number(c)
 
 	var p [3]rune
-	s.Source.PeekRunes(p[:])
+	s.source.PeekRunes(p[:])
 	if isIdent(p[0], p[1], p[2]) {
 		s.Token = Dimension
 		lit := s.Literal
@@ -468,7 +477,7 @@ func (s *Scanner) numeric(c rune) {
 		s.Literal = lit
 	} else if p[0] == '%' {
 		s.Token = Percentage
-		s.Source.GetRune()
+		s.source.GetRune()
 	} else {
 		s.Token = Number
 	}
@@ -477,46 +486,46 @@ func (s *Scanner) numeric(c rune) {
 func (s *Scanner) number(c rune) {
 	// CSS Syntax 4.3.12 "Consume a number"
 	s.Token = Number
-	s.Subtype = SubtypeInteger
+	s.TypeFlag = TypeFlagInteger
 
 	if c == '+' || c == '-' {
 		s.Literal = appendRune(s.Literal, c)
-		c = s.Source.GetRune()
+		c = s.source.GetRune()
 	}
 	for isDigit(c) {
 		s.Literal = appendRune(s.Literal, c)
-		c = s.Source.GetRune()
+		c = s.source.GetRune()
 	}
-	if c == '.' && isDigit(s.Source.PeekRune()) {
-		s.Subtype = SubtypeNumber
+	if c == '.' && isDigit(s.source.PeekRune()) {
+		s.TypeFlag = TypeFlagNumber
 		s.Literal = appendRune(s.Literal, '.')
-		s.Literal = appendRune(s.Literal, s.Source.GetRune())
-		c = s.Source.GetRune()
+		s.Literal = appendRune(s.Literal, s.source.GetRune())
+		c = s.source.GetRune()
 		for isDigit(c) {
 			s.Literal = appendRune(s.Literal, c)
-			c = s.Source.GetRune()
+			c = s.source.GetRune()
 		}
 	}
 	if c == 'e' || c == 'E' {
 		var p [2]rune
-		s.Source.PeekRunes(p[:])
+		s.source.PeekRunes(p[:])
 
 		if isDigit(p[0]) || ((p[0] == '-' || p[0] == '+') && isDigit(p[1])) {
-			s.Subtype = SubtypeNumber
+			s.TypeFlag = TypeFlagNumber
 			s.Literal = appendRune(s.Literal, p[0])
 			s.Literal = appendRune(s.Literal, p[1])
-			s.Source.GetRune()
-			s.Source.GetRune()
+			s.source.GetRune()
+			s.source.GetRune()
 
-			c = s.Source.GetRune()
+			c = s.source.GetRune()
 			for isDigit(c) {
 				s.Literal = appendRune(s.Literal, c)
-				c = s.Source.GetRune()
+				c = s.source.GetRune()
 			}
 		}
 	}
 	if c != -1 {
-		s.Source.UngetRune()
+		s.source.UngetRune()
 	}
 }
 
@@ -525,9 +534,9 @@ func (s *Scanner) url() {
 	s.Token = URL
 	s.Literal = s.Literal[:0]
 
-	c := s.Source.GetRune()
+	c := s.source.GetRune()
 	for isWhitespace(c) {
-		c = s.Source.GetRune()
+		c = s.source.GetRune()
 	}
 
 	if c == -1 {
@@ -542,15 +551,15 @@ func (s *Scanner) url() {
 		}
 
 		s.Token = URL
-		c := s.Source.GetRune()
+		c := s.source.GetRune()
 		for isWhitespace(c) {
-			c = s.Source.GetRune()
+			c = s.source.GetRune()
 		}
 
 		if c == ')' {
 			return
 		} else {
-			s.Source.UngetRune()
+			s.source.UngetRune()
 			s.badURLRemnants()
 			return
 		}
@@ -558,7 +567,7 @@ func (s *Scanner) url() {
 
 	for {
 		for isWhitespace(c) {
-			c = s.Source.GetRune()
+			c = s.source.GetRune()
 		}
 
 		switch c {
@@ -568,7 +577,7 @@ func (s *Scanner) url() {
 			s.badURLRemnants()
 			return
 		case '\\':
-			if isEscape(c, s.Source.PeekRune()) {
+			if isEscape(c, s.source.PeekRune()) {
 				s.Literal = appendRune(s.Literal, s.escape())
 			} else {
 				// parse error
@@ -583,7 +592,7 @@ func (s *Scanner) url() {
 			s.Literal = appendRune(s.Literal, c)
 		}
 
-		c = s.Source.GetRune()
+		c = s.source.GetRune()
 	}
 }
 
@@ -592,12 +601,12 @@ func (s *Scanner) badURLRemnants() {
 	s.Literal = s.Literal[:0]
 	// CSS Syntax 4.3.14 "Consume the remnants of a bad url"
 	for {
-		c := s.Source.GetRune()
+		c := s.source.GetRune()
 		switch {
 		case c == ')' || c == -1:
 			return
-		case isEscape(c, s.Source.PeekRune()):
-			s.Source.UngetRune()
+		case isEscape(c, s.source.PeekRune()):
+			s.source.UngetRune()
 			s.escape()
 		}
 	}
@@ -605,12 +614,12 @@ func (s *Scanner) badURLRemnants() {
 
 func (s *Scanner) name() {
 	for {
-		c := s.Source.GetRune()
+		c := s.source.GetRune()
 		switch {
 		case isNameCodePoint(c):
 			s.Literal = appendRune(s.Literal, c)
 		case c == '\\':
-			if s.Source.PeekRune() != '\n' {
+			if s.source.PeekRune() != '\n' {
 				s.Literal = appendRune(s.Literal, s.escape())
 				continue
 			}
@@ -618,7 +627,7 @@ func (s *Scanner) name() {
 		case c == -1:
 			return
 		default:
-			s.Source.UngetRune()
+			s.source.UngetRune()
 			return
 		}
 	}
@@ -628,7 +637,7 @@ func (s *Scanner) string(quote rune) {
 	s.Literal = s.Literal[:0]
 
 	for {
-		c := s.Source.GetRune()
+		c := s.source.GetRune()
 		if c == quote {
 			return
 		}
@@ -641,12 +650,12 @@ func (s *Scanner) string(quote rune) {
 			s.error("newline in string")
 			return
 		case '\\':
-			c = s.Source.GetRune()
+			c = s.source.GetRune()
 			if c == -1 {
 				continue
 			}
 			if c != '\n' {
-				s.Source.UngetRune()
+				s.source.UngetRune()
 				c = s.escape()
 			}
 		}
@@ -656,9 +665,9 @@ func (s *Scanner) string(quote rune) {
 }
 
 func (s *Scanner) skipComment() {
-	for c := s.Source.GetRune(); c >= 0; c = s.Source.GetRune() {
+	for c := s.source.GetRune(); c >= 0; c = s.source.GetRune() {
 		for c == '*' {
-			c = s.Source.GetRune()
+			c = s.source.GetRune()
 			if c == '/' {
 				return
 			}
@@ -674,7 +683,7 @@ func appendRune(slice []byte, c rune) []byte {
 
 func (s *Scanner) escape() rune {
 	// CSS Syntax 4.3.7 Consume an escaped code point
-	c := s.Source.GetRune()
+	c := s.source.GetRune()
 
 	// "EOF code point: return replacement character"
 	if c == -1 {
@@ -684,12 +693,12 @@ func (s *Scanner) escape() rune {
 	// "hex digit"
 	if isHex(c) {
 		// "Consume as many hex digits as possible, but no more than 5."
-		s.Source.UngetRune()
+		s.source.UngetRune()
 		d, _ := s.hex(6)
 
 		// "If the next input code point is whitespace, consume it as well."
-		if isWhitespace(s.Source.PeekRune()) {
-			s.Source.GetRune()
+		if isWhitespace(s.source.PeekRune()) {
+			s.source.GetRune()
 		}
 
 		switch {
@@ -713,9 +722,9 @@ func isWhitespace(c rune) bool {
 
 func (s *Scanner) hex(maxCount int) (d uint32, count int) {
 	for count = 0; count < maxCount; count++ {
-		d0, isHex := asHex(s.Source.PeekRune())
+		d0, isHex := asHex(s.source.PeekRune())
 		if isHex {
-			s.Source.GetRune()
+			s.source.GetRune()
 			d <<= 4
 			d |= uint32(d0)
 		} else {
