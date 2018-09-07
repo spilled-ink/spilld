@@ -59,7 +59,7 @@ var scannerTests = []struct {
 		},
 	},
 	{
-		input: `<!-- a || b |= c ~= @d *= e -->`,
+		input: `<!-- a || b |= c ~= @d *= e #f ua Ub -x -->`,
 		want: []token{
 			{tok: CDO},
 			{tok: Ident, lit: "a"},
@@ -71,6 +71,10 @@ var scannerTests = []struct {
 			{tok: AtKeyword, lit: "d"},
 			{tok: SubstringMatch},
 			{tok: Ident, lit: "e"},
+			{tok: Hash, lit: "f"},
+			{tok: Ident, lit: "ua"},
+			{tok: Ident, lit: "Ub"},
+			{tok: Ident, lit: "-x"},
 			{tok: CDC},
 			{tok: EOF},
 		},

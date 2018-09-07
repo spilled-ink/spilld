@@ -183,8 +183,8 @@ redo:
 		if isDigit(p[0]) {
 			s.numeric(c)
 		} else if isIdent(p[0], p[1], p[2]) {
-			// TODO "reconsume the current input code point,
-			// consume an ident-like token, and return it"
+			s.Source.UngetRune()
+			s.identLike()
 		} else if p[0] == '-' && p[1] == '>' {
 			s.Source.GetRune()
 			s.Source.GetRune()
@@ -267,7 +267,14 @@ redo:
 		s.Token = RightBrace
 
 	case 'U', 'u':
-		// TODO
+		var p [2]rune
+		s.Source.PeekRunes(p[:])
+		if p[0] == '+' && (isHex(p[1]) || p[1] == '?') {
+			// TODO
+		} else {
+			s.Source.UngetRune()
+			s.identLike()
+		}
 
 	case '|':
 		switch s.Source.PeekRune() {
@@ -295,32 +302,17 @@ redo:
 		if isDigit(c) {
 			s.numeric(c)
 		} else if isNameStartCodePoint(c) {
-			// CSS Syntax 4.3.3. Consume an ident-like token
 			s.Source.UngetRune()
-			s.name()
-
-			if len(s.Literal) == 3 && string(s.Literal) == "url" && s.Source.PeekRune() == '(' {
-				// "If the returned string’s value is an ASCII
-				// case-insensitive match for "url", and the next
-				// input code point is U+0028 LEFT PARENTHESIS ((),
-				// consume it. Consume a url token, and return it."
-				s.Source.GetRune()
-				s.url()
-			} else if s.Source.PeekRune() == '(' {
-				// "Otherwise, if the next input code point is
-				// U+0028 LEFT PARENTHESIS ((), consume it.
-				// Create a <function-token> with its value set
-				// to the returned string and return it.""
-				s.Source.GetRune()
-				s.Token = Function
-			} else {
-				s.Token = Ident
-			}
+			s.identLike()
 		} else {
 			s.Token = Delim
 			s.Literal = appendRune(s.Literal, c)
 		}
 	}
+}
+
+func isHex(c rune) bool {
+	return isDigit(c) || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F')
 }
 
 func isNameCodePoint(c rune) bool {
@@ -378,6 +370,29 @@ func isIdent(c0, c1, c2 rune) bool {
 		return true
 	}
 	return isEscape(c0, c1)
+}
+
+func (s *Scanner) identLike() {
+	// CSS Syntax 4.3.3. Consume an ident-like token
+	s.name()
+
+	if len(s.Literal) == 3 && string(s.Literal) == "url" && s.Source.PeekRune() == '(' {
+		// "If the returned string’s value is an ASCII
+		// case-insensitive match for "url", and the next
+		// input code point is U+0028 LEFT PARENTHESIS ((),
+		// consume it. Consume a url token, and return it."
+		s.Source.GetRune()
+		s.url()
+	} else if s.Source.PeekRune() == '(' {
+		// "Otherwise, if the next input code point is
+		// U+0028 LEFT PARENTHESIS ((), consume it.
+		// Create a <function-token> with its value set
+		// to the returned string and return it.""
+		s.Source.GetRune()
+		s.Token = Function
+	} else {
+		s.Token = Ident
+	}
 }
 
 func (s *Scanner) numeric(c rune) {
