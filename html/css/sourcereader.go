@@ -133,7 +133,6 @@ func (r *SourceReader) GetRune() rune {
 	rn, size := r.peek()
 	//println(fmt.Sprintf("GetRune rn=%s, size=%d", string(rn), size))
 
-	r.lastRuneLen = -1
 	if rn == -1 {
 		return -1
 	}

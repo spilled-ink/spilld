@@ -62,10 +62,13 @@ type Scanner struct {
 	Source     *SourceReader
 	ErrHandler func(line, col, n int, msg string)
 
-	Token   Token
-	Subtype Subtype
-	Literal []byte
-	Unit    []byte // valid when Token == Dimension
+	// Token results
+	Token      Token
+	Subtype    Subtype
+	Literal    []byte
+	Unit       []byte // valid when Token == Dimension
+	RangeStart uint32 // valid when Token == UnicodeRange
+	RangeEnd   uint32 // valid when Token == UnicodeRange
 
 	nextIsBangDelim bool // extra lookahead
 }
@@ -94,6 +97,8 @@ func (s *Scanner) Next() {
 	s.Subtype = SubtypeNone
 	s.Literal = s.Literal[:0]
 	s.Unit = nil
+	s.RangeStart = 0
+	s.RangeEnd = 0
 
 	// CSS Syntax 4.3.1 consume as much whitespace as possible
 redo:
@@ -277,7 +282,8 @@ redo:
 		var p [2]rune
 		s.Source.PeekRunes(p[:])
 		if p[0] == '+' && (isHex(p[1]) || p[1] == '?') {
-			// TODO
+			s.Source.GetRune() // consume '+'
+			s.unicodeRange()
 		} else {
 			s.Source.UngetRune()
 			s.identLike()
@@ -379,6 +385,53 @@ func isIdent(c0, c1, c2 rune) bool {
 	return isEscape(c0, c1)
 }
 
+func (s *Scanner) unicodeRange() {
+	// CSS Syntax 4.3.6 "Consume a unicode-range token"
+
+	// "Consume as many hex digits as possible, but no more than 6."
+	var d uint32
+	d, i := s.hex(6)
+	numQM := 0
+	for i < 6 {
+		if s.Source.PeekRune() == '?' {
+			s.Source.GetRune()
+			numQM++
+		} else {
+			break
+		}
+		i++
+	}
+
+	if numQM > 0 {
+		rangeStart := d
+		rangeEnd := d
+		for i := numQM; i > 0; i-- {
+			rangeStart <<= 4
+			rangeEnd <<= 4
+			rangeEnd |= uint32(0xf)
+		}
+		s.RangeStart = rangeStart
+		s.RangeEnd = rangeEnd
+		s.Token = UnicodeRange
+		return
+	}
+
+	s.RangeStart = d
+
+	var p [2]rune
+	s.Source.PeekRunes(p[:])
+	if p[0] == '-' && isHex(p[1]) {
+		s.Source.GetRune()
+		s.RangeEnd, _ = s.hex(6)
+		s.Token = UnicodeRange
+		return
+	}
+
+	s.RangeEnd = s.RangeStart
+	s.Token = UnicodeRange
+	return
+}
+
 func (s *Scanner) identLike() {
 	// CSS Syntax 4.3.3. Consume an ident-like token
 	s.name()
@@ -464,7 +517,9 @@ func (s *Scanner) number(c rune) {
 			}
 		}
 	}
-	s.Source.UngetRune()
+	if c != -1 {
+		s.Source.UngetRune()
+	}
 }
 
 func (s *Scanner) url() {
@@ -627,23 +682,15 @@ func (s *Scanner) escape() rune {
 	}
 
 	// "hex digit"
-	if d0, isHex := asHex(c); isHex {
-		d := uint32(d0)
-
+	if isHex(c) {
 		// "Consume as many hex digits as possible, but no more than 5."
-		for i := 0; i < 5; i++ {
-			c = s.Source.GetRune()
-			d0, isHex := asHex(c)
-			if isHex {
-				d <<= 8
-				d |= uint32(d0)
-			} else {
-				break
-			}
-		}
+		s.Source.UngetRune()
+		d, _ := s.hex(6)
+		println("escape d=", d)
+
 		// "If the next input code point is whitespace, consume it as well."
-		if !isWhitespace(c) {
-			s.Source.UngetRune()
+		if isWhitespace(s.Source.PeekRune()) {
+			s.Source.GetRune()
 		}
 
 		switch {
@@ -665,14 +712,29 @@ func isWhitespace(c rune) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
+func (s *Scanner) hex(maxCount int) (d uint32, count int) {
+	for count = 0; count < maxCount; count++ {
+		d0, isHex := asHex(s.Source.PeekRune())
+		println("d0=", d0)
+		if isHex {
+			s.Source.GetRune()
+			d <<= 4
+			d |= uint32(d0)
+		} else {
+			break
+		}
+	}
+	return d, count
+}
+
 func asHex(c rune) (uint8, bool) {
 	switch {
 	case '0' <= c && c <= '9':
-		return 0x0 + uint8('0'-c), true
+		return 0x0 + uint8(c-'0'), true
 	case 'a' <= c && c <= 'f':
-		return 0xa + uint8('a'-c), true
+		return 0xa + uint8(c-'a'), true
 	case 'A' <= c && c <= 'F':
-		return 0xa + uint8('A'-c), true
+		return 0xa + uint8(c-'A'), true
 	default:
 		return 0, false
 	}

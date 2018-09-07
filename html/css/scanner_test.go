@@ -8,20 +8,26 @@ import (
 )
 
 type token struct {
-	tok  Token
-	sub  Subtype
-	lit  string
-	unit string
+	tok   Token
+	sub   Subtype
+	lit   string
+	unit  string
+	start uint32
+	end   uint32
 }
 
 func (t token) String() string {
-	if t.lit == "" && t.sub == SubtypeNone && t.unit == "" {
+	if t.lit == "" && t.sub == SubtypeNone && t.unit == "" && t.start == 0 && t.end == 0 {
 		return fmt.Sprintf("tok:%s", t.tok)
 	}
-	if t.sub == SubtypeNone && t.unit == "" {
+	if t.sub == SubtypeNone && t.unit == "" && t.start == 0 && t.end == 0 {
 		return fmt.Sprintf("{%s %q}", t.tok, t.lit)
 	}
-	return fmt.Sprintf("{%s %s %q %q}", t.tok, t.sub, t.lit, t.unit)
+	if t.start == 0 && t.end == 0 {
+		return fmt.Sprintf("{%s %s %q %q}", t.tok, t.sub, t.lit, t.unit)
+	}
+
+	return fmt.Sprintf("{%s %s %q %q 0x%x-0x%x}", t.tok, t.sub, t.lit, t.unit, t.start, t.end)
 }
 
 var scannerTests = []struct {
@@ -80,6 +86,23 @@ var scannerTests = []struct {
 			{tok: EOF},
 		},
 	},
+	{
+		input: `u+0102?? u+01-05 u+fa`,
+		want: []token{
+			{tok: UnicodeRange, start: 0x010200, end: 0x0102ff},
+			{tok: UnicodeRange, start: 0x01, end: 0x05},
+			{tok: UnicodeRange, start: 0xfa, end: 0xfa},
+			{tok: EOF},
+		},
+	},
+	{
+		input: `"a\d\a" 5`,
+		want: []token{
+			{tok: String, lit: "a\r\n"},
+			{tok: Number, sub: SubtypeInteger, lit: "5"},
+			{tok: EOF},
+		},
+	},
 }
 
 func TestScanner(t *testing.T) {
@@ -87,17 +110,21 @@ func TestScanner(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			errh := func(line, col, n int, msg string) {
 				t.Errorf("%d:%d: (n=%d): %s", line, col, n, msg)
+				//panic("foo")
 			}
 			s := NewScanner(strings.NewReader(test.input), errh)
 			var got []token
 			for {
 				s.Next()
 				got = append(got, token{
-					tok:  s.Token,
-					lit:  string(s.Literal),
-					sub:  s.Subtype,
-					unit: string(s.Unit),
+					tok:   s.Token,
+					lit:   string(s.Literal),
+					sub:   s.Subtype,
+					unit:  string(s.Unit),
+					start: s.RangeStart,
+					end:   s.RangeEnd,
 				})
+				println("next, token=", fmt.Sprintf("%v", got[len(got)-1]))
 				if s.Token == EOF {
 					break
 				}
