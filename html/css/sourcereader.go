@@ -121,7 +121,7 @@ func (r *SourceReader) PeekRunes(runes []rune) error {
 			rn = '\uFFFD' // unicode replacement character
 		}
 		runes[i] = rn
-		off += size
+		peekOff += size
 	}
 	return nil
 }
