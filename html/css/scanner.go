@@ -1,3 +1,23 @@
+// Package css implements a CSS tokenizer.
+//
+// It is written to the CSS Syntax Module Level 3 specification.
+// https://www.w3.org/TR/css-syntax-3/
+//
+// Typical use is calling the Next method until an EOF token is seen:
+//
+//	errh := func(line, col, n int, msg string) {
+//		log.Printf("%d:%d: %s", line, col, msg)
+//	}
+//	s := css.NewScanner(r, errh)
+//	for {
+//		s.Next()
+//		if s.Token == css.EOF {
+//			break
+//		}
+//		// ... process the token fields of s.
+//	}
+//
+// Note: []byte data provided by s is reused when Next is called.
 package css
 
 import (
