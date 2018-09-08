@@ -55,7 +55,7 @@ func (r *_SourceReader) fill() {
 	}
 
 	allbuf := r.buf[0:cap(r.buf)]
-	n, err := r.src.Read(allbuf[r.off:])
+	n, err := r.src.Read(allbuf[len(r.buf):])
 	r.buf = allbuf[:len(r.buf)+n]
 	if err != nil {
 		r.err = err
@@ -99,7 +99,13 @@ func (r *_SourceReader) PeekRune() rune {
 }
 
 func (r *_SourceReader) fillTo(peekOff int) {
-	for r.off+peekOff+utf8.UTFMax > len(r.buf) && !utf8.FullRune(r.buf[r.off+peekOff:]) && r.err == nil {
+	for r.err == nil {
+		if r.off+peekOff+utf8.UTFMax <= len(r.buf) {
+			break
+		}
+		if r.off+peekOff < len(r.buf) && utf8.FullRune(r.buf[r.off+peekOff:]) {
+			break
+		}
 		r.fill()
 	}
 }

@@ -2,11 +2,13 @@ package css
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 type pos struct {
@@ -241,7 +243,7 @@ bar"`,
 	},
 }
 
-func TestScanner(t *testing.T) {
+func testScanner(t *testing.T, oneByteReader bool) {
 	for _, test := range scannerTests {
 		name := test.name
 		if name == "" {
@@ -256,7 +258,11 @@ func TestScanner(t *testing.T) {
 					t.Errorf("%d:%d: (n=%d): %s", line, col, n, msg)
 				}
 			}
-			s := NewScanner(strings.NewReader(test.input), errh)
+			r := io.Reader(strings.NewReader(test.input))
+			if oneByteReader {
+				r = iotest.OneByteReader(r)
+			}
+			s := NewScanner(r, errh)
 			var got []token
 			for {
 				s.Next()
@@ -284,6 +290,14 @@ func TestScanner(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestScanner(t *testing.T) {
+	testScanner(t, false)
+}
+
+func TestOneByteScanner(t *testing.T) {
+	testScanner(t, true)
 }
 
 func TestScannerFiles(t *testing.T) {
