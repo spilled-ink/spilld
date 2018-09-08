@@ -76,8 +76,7 @@ type Scanner struct {
 	Line       int      // line number at token beginning
 	Col        int      // column offset in bytes at token beginning
 
-	source          *_SourceReader
-	nextIsBangDelim bool // extra lookahead
+	source *_SourceReader
 }
 
 func NewScanner(src io.Reader, errHandler func(line, col, n int, msg string)) *Scanner {
