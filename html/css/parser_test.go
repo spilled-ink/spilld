@@ -22,6 +22,13 @@ var parseDeclTests = []struct {
 			{Property: ident("background"), Values: idents(`url("https://example.com/foo.svg")`)},
 		},
 	},
+	{
+		input: `color: gray /* comment */; font-size: 5.67em;`,
+		want: []Decl{
+			{Property: ident("color"), Values: idents("gray")},
+			{Property: ident("font-size"), Values: idents("5.67em")},
+		},
+	},
 }
 
 func TestParseDecl(t *testing.T) {
