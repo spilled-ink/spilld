@@ -1,23 +1,3 @@
-// Package css implements a CSS tokenizer.
-//
-// It is written to the CSS Syntax Module Level 3 specification.
-// https://www.w3.org/TR/css-syntax-3/
-//
-// Typical use is calling the Next method until an EOF token is seen:
-//
-//	errh := func(line, col, n int, msg string) {
-//		log.Printf("%d:%d: %s", line, col, msg)
-//	}
-//	s := css.NewScanner(r, errh)
-//	for {
-//		s.Next()
-//		if s.Token == css.EOF {
-//			break
-//		}
-//		// ... process the token fields of s.
-//	}
-//
-// Note: []byte data provided by s is reused when Next is called.
 package css
 
 import (
@@ -95,6 +75,7 @@ type Scanner struct {
 	RangeEnd   uint32   // for UnicodeRange
 	Line       int      // line number at token beginning
 	Col        int      // column offset in bytes at token beginning
+	N          int      // byte offset at token beginning
 
 	source *_SourceReader
 }
@@ -112,11 +93,6 @@ func NewScanner(src io.Reader, errHandler func(line, col, n int, msg string)) *S
 	return s
 }
 
-func (s *Scanner) error(msg string) {
-	line, col, n := s.source.Pos()
-	s.ErrHandler(line, col, n, msg)
-}
-
 // Next reads the next token to advance the scanner.
 func (s *Scanner) Next() {
 	s.Token = Unknown
@@ -128,10 +104,10 @@ func (s *Scanner) Next() {
 
 	// CSS Syntax 4.3.1 consume as much whitespace as possible
 redo:
-	s.Line, s.Col, _ = s.source.Pos()
+	s.updatePos()
 	c := s.source.GetRune()
 	for isWhitespace(c) {
-		s.Line, s.Col, _ = s.source.Pos()
+		s.updatePos()
 		c = s.source.GetRune()
 	}
 
@@ -292,7 +268,8 @@ redo:
 		var p [2]rune
 		s.source.PeekRunes(p[:])
 		if p[0] == '+' && (isHex(p[1]) || p[1] == '?') {
-			s.source.GetRune() // consume '+'
+			s.Literal = appendRune(s.Literal, c)
+			s.Literal = appendRune(s.Literal, s.source.GetRune()) // consume '+'
 			s.unicodeRange()
 		} else {
 			s.source.UngetRune()
@@ -395,11 +372,20 @@ func isIdent(c0, c1, c2 rune) bool {
 	return isEscape(c0, c1)
 }
 
+func (s *Scanner) error(msg string) {
+	s.ErrHandler(s.Line, s.Col, s.N, msg)
+}
+
+func (s *Scanner) updatePos() {
+	s.Line, s.Col, s.N = s.source.Pos()
+}
+
 func (s *Scanner) hash() {
 	var p [2]rune
 	s.source.PeekRunes(p[:])
 	hasName := isNameCodePoint(p[0]) || isEscape(p[0], p[1])
 
+	s.Literal = append(s.Literal, '#')
 	if hasName {
 		// "If the next input code point is a name code point
 		// or the next two input code points are a valid escape"
@@ -411,7 +397,6 @@ func (s *Scanner) hash() {
 		// "Otherwise, return a <delim-token> with its value
 		// set to the current input code point."
 		s.Token = Delim
-		s.Literal = append(s.Literal, '#')
 	}
 }
 
@@ -424,7 +409,7 @@ func (s *Scanner) unicodeRange() {
 	numQM := 0
 	for i < 6 {
 		if s.source.PeekRune() == '?' {
-			s.source.GetRune()
+			s.Literal = appendRune(s.Literal, s.source.GetRune())
 			numQM++
 		} else {
 			break
@@ -451,7 +436,7 @@ func (s *Scanner) unicodeRange() {
 	var p [2]rune
 	s.source.PeekRunes(p[:])
 	if p[0] == '-' && isHex(p[1]) {
-		s.source.GetRune()
+		s.Literal = appendRune(s.Literal, s.source.GetRune())
 		s.RangeEnd, _ = s.hex(6)
 		s.Token = UnicodeRange
 		return
@@ -471,7 +456,7 @@ func (s *Scanner) identLike() {
 		// case-insensitive match for "url", and the next
 		// input code point is U+0028 LEFT PARENTHESIS ((),
 		// consume it. Consume a url token, and return it."
-		s.source.GetRune()
+		s.Literal = appendRune(s.Literal, s.source.GetRune())
 		s.url()
 	} else if s.source.PeekRune() == '(' {
 		// "Otherwise, if the next input code point is
@@ -497,7 +482,7 @@ func (s *Scanner) numeric(c rune) {
 		s.Literal = s.Literal[len(s.Literal):]
 		s.name()
 		s.Unit = s.Literal
-		s.Literal = lit
+		s.Literal = lit[:len(lit)+len(s.Literal)]
 	} else if p[0] == '%' {
 		s.Token = Percentage
 		s.source.GetRune()
@@ -556,7 +541,6 @@ func (s *Scanner) number(c rune) {
 func (s *Scanner) url() {
 	// CSS Syntax 4.3.5 "Consume a url token"
 	s.Token = URL
-	s.Literal = s.Literal[:0]
 
 	c := s.source.GetRune()
 	for isWhitespace(c) {
@@ -581,6 +565,7 @@ func (s *Scanner) url() {
 		}
 
 		if c == ')' {
+			s.Literal = append(s.Literal, ')')
 			return
 		} else {
 			s.source.UngetRune()
@@ -595,14 +580,18 @@ func (s *Scanner) url() {
 		}
 
 		switch c {
-		case ')', -1:
+		case ')':
+			s.Literal = append(s.Literal, ')')
+			return
+		case -1:
 			return
 		case '"', '\'', '(':
 			s.badURLRemnants()
 			return
 		case '\\':
 			if isEscape(c, s.source.PeekRune()) {
-				s.Literal = appendRune(s.Literal, s.escape())
+				s.Literal = append(s.Literal, '\\')
+				s.escape()
 			} else {
 				// parse error
 				s.badURLRemnants()
@@ -622,12 +611,12 @@ func (s *Scanner) url() {
 
 func (s *Scanner) badURLRemnants() {
 	s.Token = BadURL
-	s.Literal = s.Literal[:0]
 	// CSS Syntax 4.3.14 "Consume the remnants of a bad url"
 	for {
 		c := s.source.GetRune()
 		switch {
 		case c == ')' || c == -1:
+			s.Literal = s.Literal[:0]
 			return
 		case isEscape(c, s.source.PeekRune()):
 			s.source.UngetRune()
@@ -644,7 +633,8 @@ func (s *Scanner) name() {
 			s.Literal = appendRune(s.Literal, c)
 		case c == '\\':
 			if s.source.PeekRune() != '\n' {
-				s.Literal = appendRune(s.Literal, s.escape())
+				s.Literal = append(s.Literal, '\\')
+				s.escape()
 				continue
 			}
 			fallthrough
@@ -658,36 +648,42 @@ func (s *Scanner) name() {
 }
 
 func (s *Scanner) string(quote rune) {
-	s.Literal = s.Literal[:0]
+	s.Literal = appendRune(s.Literal, quote)
 
 	for {
 		c := s.source.GetRune()
 		if c == quote {
+			s.Literal = appendRune(s.Literal, quote)
 			return
 		}
 		switch c {
 		case -1:
 			s.Literal = s.Literal[:0]
 			s.Token = BadString
+			s.updatePos()
 			s.error("unterminated string")
 			return
 		case '\n':
 			s.Literal = s.Literal[:0]
 			s.Token = BadString
+			s.updatePos()
 			s.error("newline in string")
 			return
 		case '\\':
+			s.Literal = append(s.Literal, '\\')
 			c = s.source.GetRune()
 			if c == -1 {
 				continue
 			}
-			if c != '\n' {
+			if c == '\n' {
+				s.Literal = appendRune(s.Literal, c)
+			} else {
 				s.source.UngetRune()
-				c = s.escape()
+				s.escape()
 			}
+		default:
+			s.Literal = appendRune(s.Literal, c)
 		}
-
-		s.Literal = appendRune(s.Literal, c)
 	}
 }
 
@@ -700,6 +696,7 @@ func (s *Scanner) skipComment() {
 			}
 		}
 	}
+	s.updatePos()
 	s.error("unterminated comment")
 }
 
@@ -737,9 +734,11 @@ func (s *Scanner) escape() rune {
 		default:
 			c = rune(d)
 		}
+		return c
 	}
 
 	// "anything else: Return the current input code point."
+	s.Literal = appendRune(s.Literal, c)
 	return c
 }
 
@@ -751,7 +750,7 @@ func (s *Scanner) hex(maxCount int) (d uint32, count int) {
 	for count = 0; count < maxCount; count++ {
 		d0, isHex := asHex(s.source.PeekRune())
 		if isHex {
-			s.source.GetRune()
+			s.Literal = appendRune(s.Literal, s.source.GetRune())
 			d <<= 4
 			d |= uint32(d0)
 		} else {
