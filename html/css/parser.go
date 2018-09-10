@@ -1,5 +1,10 @@
 package css
 
+import (
+	"bytes"
+	"io"
+)
+
 // Parser parses CSS.
 type Parser struct {
 	s *Scanner
@@ -107,6 +112,22 @@ func (d *Decl) clear() {
 		d.Values = d.Values[:0]
 	}
 	d.BangImportant = false
+}
+
+func FprintDecl(dst io.Writer, d *Decl) (n int, err error) {
+	buf := new(bytes.Buffer)
+	buf.Write(d.Property.Literal)
+	buf.WriteString(": ")
+	for i, val := range d.Values {
+		if i > 0 {
+			buf.WriteByte(' ')
+		}
+		buf.Write(val.Literal)
+	}
+
+	buf.WriteByte(';')
+
+	return dst.Write(buf.Bytes())
 }
 
 /*
