@@ -17,18 +17,42 @@ var parseDeclTests = []struct {
 	{
 		input: `border: 1px solid #ababab; padding: 0; background: url("https://example.com/foo.svg")`,
 		want: []Decl{
-			{Property: ident("border"), Values: idents("1px", "solid", "#ababab")},
-			{Property: ident("padding"), Values: idents("0")},
-			{Property: ident("background"), Values: idents(`url("https://example.com/foo.svg")`)},
+			decl("border", []Value{
+				{Type: ValueDimension, Raw: b("1px")},
+				{Type: ValueIdent, Raw: b("solid"), Value: b("solid")},
+				{Type: ValueHash, Raw: b("#ababab"), Value: b("ababab")},
+			}),
+			decl("padding", []Value{{
+				Type: ValueInteger, Raw: b("0"),
+			}}),
+			decl("background", []Value{{
+				Type:  ValueURL,
+				Raw:   b(`url("https://example.com/foo.svg")`),
+				Value: b("https://example.com/foo.svg"),
+			}}),
 		},
 	},
 	{
 		input: `color: gray /* comment */; font-size: 5.67em;`,
 		want: []Decl{
-			{Property: ident("color"), Values: idents("gray")},
-			{Property: ident("font-size"), Values: idents("5.67em")},
+			decl("color", []Value{
+				{Type: ValueIdent, Raw: b("gray"), Value: b("gray")},
+			}),
+			decl("font-size", []Value{
+				{Type: ValueDimension, Raw: b("5.67em")},
+			}),
 		},
 	},
+}
+
+func b(s string) []byte { return []byte(s) }
+
+func decl(name string, v []Value) Decl {
+	return Decl{
+		Property:    []byte(name),
+		PropertyRaw: []byte(name),
+		Values:      v,
+	}
 }
 
 func TestParseDecl(t *testing.T) {
@@ -61,17 +85,6 @@ func TestParseDecl(t *testing.T) {
 	}
 }
 
-func ident(s string) Identifier {
-	return Identifier{Literal: []byte(s)}
-}
-
-func idents(strs ...string) (values []Identifier) {
-	for _, s := range strs {
-		values = append(values, ident(s))
-	}
-	return values
-}
-
 func sprintDecls(decls []Decl) string {
 	buf := new(bytes.Buffer)
 	fprintDecls(buf, decls)
@@ -89,29 +102,32 @@ func fprintDecls(buf *bytes.Buffer, decls []Decl) {
 	buf.WriteString("]")
 }
 
-func fprintIdent(buf *bytes.Buffer, ident Identifier) {
-	if ident.Pos == (Position{}) {
-		fmt.Fprintf(buf, "%q", string(ident.Literal))
-	} else {
-		fmt.Fprintf(buf, "%d:%d:%q", ident.Pos.Line, ident.Pos.Col, string(ident.Literal))
+func fprintVal(buf *bytes.Buffer, val Value) {
+	if val.Pos != (Position{}) {
+		fmt.Fprintf(buf, "%d:%d:", val.Pos.Line, val.Pos.Col)
 	}
+	fmt.Fprintf(buf, "%s:%q/%q:%x", val.Type, string(val.Raw), string(val.Value), val.Data)
 }
 
 func fprintDecl(buf *bytes.Buffer, decl Decl) {
-	fmt.Fprintf(buf, "{prop:")
-	fprintIdent(buf, decl.Property)
+	if decl.Pos == (Position{}) {
+		fmt.Fprintf(buf, "{")
+	} else {
+		fmt.Fprintf(buf, "{%d%d:", decl.Pos.Line, decl.Pos.Col)
+	}
+	fmt.Fprintf(buf, "prop:%q/%q", string(decl.Property), string(decl.PropertyRaw))
 	fmt.Fprintf(buf, " vals:[")
 	for i, ident := range decl.Values {
 		if i > 0 {
-			buf.WriteByte(' ')
+			buf.WriteString(", ")
 		}
-		fprintIdent(buf, ident)
+		fprintVal(buf, ident)
 	}
 	fmt.Fprintf(buf, "]}")
 }
 
 func clearPos(decl *Decl) {
-	decl.Property.Pos = Position{}
+	decl.Pos = Position{}
 	for i := range decl.Values {
 		decl.Values[i].Pos = Position{}
 	}

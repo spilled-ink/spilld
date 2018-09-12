@@ -3,6 +3,7 @@ package css
 import (
 	"bytes"
 	"io"
+	"math"
 )
 
 // Parser parses CSS.
@@ -55,8 +56,9 @@ func (p *Parser) error(msg string) {
 
 func (p *Parser) parseDecl(d *Decl) bool {
 	// CSS Syntax 5.4.5 "Consume a declaration"
-	d.Property.Pos = Position{Line: p.s.Line, Col: p.s.Col}
-	d.Property.Literal = append(d.Property.Literal, p.s.Literal...)
+	d.Pos = Position{Line: p.s.Line, Col: p.s.Col}
+	d.Property = append(d.Property, p.s.Value...)
+	d.PropertyRaw = append(d.PropertyRaw, p.s.Literal...)
 	p.next()
 	if p.s.Token != Colon {
 		p.error("bad declaration: expecting ':'")
@@ -66,45 +68,153 @@ func (p *Parser) parseDecl(d *Decl) bool {
 	p.next()
 	for p.s.Token != EOF && p.s.Token != Semicolon {
 		if len(d.Values) == cap(d.Values) {
-			d.Values = append(d.Values, Identifier{})
+			d.Values = append(d.Values, Value{})
 		} else {
 			d.Values = d.Values[:len(d.Values)+1]
 		}
-		ident := &d.Values[len(d.Values)-1]
-		ident.clear()
-		d.Property.Pos = Position{Line: p.s.Line, Col: p.s.Col}
-		ident.Literal = append(ident.Literal, p.s.Literal...)
+		v := &d.Values[len(d.Values)-1]
+		v.clear()
+		v.Type = valueType(p.s.Token, p.s.TypeFlag)
+		v.Pos = Position{Line: p.s.Line, Col: p.s.Col}
+		v.Raw = append(v.Raw, p.s.Literal...)
+		v.Value = append(v.Value, p.s.Value...)
 		p.next()
 	}
 	return true
 }
 
+func valueType(t Token, flag TypeFlag) ValueType {
+	switch t {
+	case Ident:
+		return ValueIdent
+	case Function:
+		return ValueFunction
+	case Hash:
+		// TODO: check flag to see if it's a ValueHashID
+		return ValueHash
+	case String:
+		return ValueString
+	case URL:
+		return ValueURL
+	case Delim:
+		return ValueDelim
+	case Number:
+		if flag == TypeFlagInteger {
+			return ValueInteger
+		}
+		return ValueNumber
+	case Percentage:
+		return ValuePercentage
+	case Dimension:
+		return ValueDimension
+	case UnicodeRange:
+		return ValueUnicodeRange
+	case IncludeMatch:
+		return ValueIncludeMatch
+	case DashMatch:
+		return ValueDashMatch
+	case PrefixMatch:
+		return ValuePrefixMatch
+	case SuffixMatch:
+		return ValueSuffixMatch
+	case SubstringMatch:
+		return ValueSubstringMatch
+	}
+	return ValueUnknown
+}
+
+// Position is a line and column byte offset within a source document.
+// It is used to report where a piece of parsed CSS was found.
 type Position struct {
 	Line int
 	Col  int
 }
 
-type Identifier struct {
-	Pos     Position
-	Literal []byte
-}
-
 // Decl is a CSS declaration.
 type Decl struct {
-	Property      Identifier
-	Values        []Identifier
+	Pos           Position
+	Property      []byte // escaped property name
+	PropertyRaw   []byte // unescaped raw byte
+	Values        []Value
 	BangImportant bool
 }
 
-func (i *Identifier) clear() {
-	i.Pos = Position{}
-	if i.Literal != nil {
-		i.Literal = i.Literal[:0]
+type Value struct {
+	Pos   Position
+	Type  ValueType
+	Value []byte // escaped, processed value
+	Raw   []byte // unescaped raw bytes underlying value
+	Data  uint64 // encodes type-specific data, read via methods
+}
+
+type ValueType int
+
+//go:generate stringer -type ValueType -linecomment
+
+const (
+	ValueUnknown        ValueType = iota // ValueUknown
+	ValueIdent                           // ident
+	ValueFunction                        // function
+	ValueHash                            // hash
+	ValueHashID                          // hash-id
+	ValueString                          // string
+	ValueURL                             // url
+	ValueDelim                           // delim
+	ValueNumber                          // num
+	ValueInteger                         // int
+	ValuePercentage                      // percent
+	ValueDimension                       // dim
+	ValueUnicodeRange                    // unocde-range
+	ValueIncludeMatch                    // include-match
+	ValueDashMatch                       // dash-match
+	ValuePrefixMatch                     // prefix-match
+	ValueSuffixMatch                     // suffix-match
+	ValueSubstringMatch                  // substr-match
+)
+
+// TODO func (v *Value) Dimension() (value, uint []byte)
+// TODO func (v *Value) URL() []byte
+
+func (v *Value) Range() (start, end uint32) {
+	if v.Type != ValueUnicodeRange {
+		return 0, 0
+	}
+	return uint32(v.Data >> 32), uint32(v.Data)
+}
+
+func (v *Value) Number() float64 {
+	if v.Type != ValueNumber {
+		return 0
+	}
+	return math.Float64frombits(v.Data)
+}
+
+func (v *Value) Integer() int64 {
+	if v.Type != ValueInteger {
+		return 0
+	}
+	return int64(v.Data)
+}
+
+func (v *Value) clear() {
+	v.Pos = Position{}
+	v.Type = ValueUnknown
+	if v.Value != nil {
+		v.Value = v.Value[:0]
+	}
+	if v.Raw != nil {
+		v.Raw = v.Raw[:0]
 	}
 }
 
 func (d *Decl) clear() {
-	d.Property.clear()
+	d.Pos = Position{}
+	if d.Property != nil {
+		d.Property = d.Property[:0]
+	}
+	if d.PropertyRaw != nil {
+		d.PropertyRaw = d.PropertyRaw[:0]
+	}
 	if d.Values != nil {
 		for i := range d.Values {
 			d.Values[i].clear()
@@ -116,13 +226,13 @@ func (d *Decl) clear() {
 
 func FprintDecl(dst io.Writer, d *Decl) (n int, err error) {
 	buf := new(bytes.Buffer)
-	buf.Write(d.Property.Literal)
+	buf.Write(d.PropertyRaw) // TODO: re-encode Property
 	buf.WriteString(": ")
 	for i, val := range d.Values {
 		if i > 0 {
 			buf.WriteByte(' ')
 		}
-		buf.Write(val.Literal)
+		buf.Write(val.Raw) // TODO: re-encode Decl
 	}
 
 	buf.WriteByte(';')

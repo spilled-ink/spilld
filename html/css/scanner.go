@@ -28,23 +28,23 @@ const (
 	Percentage
 	Dimension
 	UnicodeRange
-	IncludeMatch
-	DashMatch
-	PrefixMatch
-	SuffixMatch
-	SubstringMatch
-	Column
-	CDO        // <!--
-	CDC        // -->
-	Colon      // :
-	Semicolon  // ;
-	Comma      // ,
-	LeftBrack  // [
-	RightBrack // ]
-	LeftParen  // (
-	RightParen // )
-	LeftBrace  // {
-	RightBrace // }
+	IncludeMatch   // ~=
+	DashMatch      // |=
+	PrefixMatch    // ^=
+	SuffixMatch    // $=
+	SubstringMatch // *=
+	Column         // ||
+	CDO            // <!--
+	CDC            // -->
+	Colon          // :
+	Semicolon      // ;
+	Comma          // ,
+	LeftBrack      // [
+	RightBrack     // ]
+	LeftParen      // (
+	RightParen     // )
+	LeftBrace      // {
+	RightBrace     // }
 )
 
 // TypeFlag is a CSS Token type flag.
@@ -68,9 +68,10 @@ type Scanner struct {
 
 	// Token results
 	Token      Token
-	TypeFlag   TypeFlag // for Hash, Numberr
-	Literal    []byte   // backing array reused when Next is called
-	Unit       []byte   // for Dimension, backing array reused when Next is called
+	TypeFlag   TypeFlag // for Hash, Number
+	Literal    []byte   // raw token value, backing array reused by Next
+	Value      []byte   // escaped value for String/URL, backing array reused by Next
+	Unit       []byte   // for Dimension, backing array reused by Next
 	RangeStart uint32   // for UnicodeRange
 	RangeEnd   uint32   // for UnicodeRange
 	Line       int      // line number at token beginning
@@ -98,6 +99,7 @@ func (s *Scanner) Next() {
 	s.Token = Unknown
 	s.TypeFlag = TypeFlagNone
 	s.Literal = s.Literal[:0]
+	s.Value = s.Value[:0]
 	s.Unit = nil
 	s.RangeStart = 0
 	s.RangeEnd = 0
@@ -223,6 +225,7 @@ redo:
 		}
 
 	case '@':
+		s.Literal = append(s.Literal, '@')
 		var p [3]rune
 		s.source.PeekRunes(p[:])
 		if isIdent(p[0], p[1], p[2]) {
@@ -230,7 +233,6 @@ redo:
 			s.Token = AtKeyword
 		} else {
 			s.Token = Delim
-			s.Literal = append(s.Literal, '@')
 		}
 
 	case '[':
@@ -457,6 +459,7 @@ func (s *Scanner) identLike() {
 		// input code point is U+0028 LEFT PARENTHESIS ((),
 		// consume it. Consume a url token, and return it."
 		s.Literal = appendRune(s.Literal, s.source.GetRune())
+		s.Value = s.Value[:0]
 		s.url()
 	} else if s.source.PeekRune() == '(' {
 		// "Otherwise, if the next input code point is
@@ -481,6 +484,7 @@ func (s *Scanner) numeric(c rune) {
 		lit := s.Literal
 		s.Literal = s.Literal[len(s.Literal):]
 		s.name()
+		s.Value = s.Value[:0] // don't record unit name as value
 		s.Unit = s.Literal
 		s.Literal = lit[:len(lit)+len(s.Literal)]
 	} else if p[0] == '%' {
@@ -575,6 +579,7 @@ func (s *Scanner) url() {
 	}
 
 	for {
+		// TODO: preserve whitespace inside url() for Literal value.
 		for isWhitespace(c) {
 			c = s.source.GetRune()
 		}
@@ -591,7 +596,7 @@ func (s *Scanner) url() {
 		case '\\':
 			if isEscape(c, s.source.PeekRune()) {
 				s.Literal = append(s.Literal, '\\')
-				s.escape()
+				s.Value = appendRune(s.Value, s.escape())
 			} else {
 				// parse error
 				s.badURLRemnants()
@@ -603,6 +608,7 @@ func (s *Scanner) url() {
 				return
 			}
 			s.Literal = appendRune(s.Literal, c)
+			s.Value = appendRune(s.Value, c)
 		}
 
 		c = s.source.GetRune()
@@ -631,10 +637,11 @@ func (s *Scanner) name() {
 		switch {
 		case isNameCodePoint(c):
 			s.Literal = appendRune(s.Literal, c)
+			s.Value = appendRune(s.Value, c)
 		case c == '\\':
 			if s.source.PeekRune() != '\n' {
 				s.Literal = append(s.Literal, '\\')
-				s.escape()
+				s.Value = appendRune(s.Value, s.escape())
 				continue
 			}
 			fallthrough
@@ -645,6 +652,13 @@ func (s *Scanner) name() {
 			return
 		}
 	}
+}
+
+func (s *Scanner) badString() {
+	s.Literal = s.Literal[:0]
+	s.Value = s.Value[:0]
+	s.Token = BadString
+	s.updatePos()
 }
 
 func (s *Scanner) string(quote rune) {
@@ -658,31 +672,28 @@ func (s *Scanner) string(quote rune) {
 		}
 		switch c {
 		case -1:
-			s.Literal = s.Literal[:0]
-			s.Token = BadString
-			s.updatePos()
+			s.badString()
 			s.error("unterminated string")
 			return
 		case '\n':
-			s.Literal = s.Literal[:0]
-			s.Token = BadString
-			s.updatePos()
+			s.badString()
 			s.error("newline in string")
 			return
 		case '\\':
 			s.Literal = append(s.Literal, '\\')
-			c = s.source.GetRune()
-			if c == -1 {
-				continue
-			}
-			if c == '\n' {
-				s.Literal = appendRune(s.Literal, c)
-			} else {
-				s.source.UngetRune()
-				s.escape()
+			switch s.source.PeekRune() {
+			case -1:
+				s.source.GetRune()
+			case '\n':
+				s.source.GetRune()
+				s.Literal = append(s.Literal, '\n')
+				s.Value = append(s.Value, '\n')
+			default:
+				s.Value = appendRune(s.Value, s.escape())
 			}
 		default:
 			s.Literal = appendRune(s.Literal, c)
+			s.Value = appendRune(s.Value, c)
 		}
 	}
 }
