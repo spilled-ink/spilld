@@ -112,7 +112,11 @@ func (p *Parser) valueType() (t ValueType, data uint64) {
 		}
 		return ValueNumber, math.Float64bits(v)
 	case Percentage:
-		v, err := strconv.ParseInt(string(p.s.Literal), 10, 64)
+		b := p.s.Literal
+		if len(b) > 0 && b[len(b)-1] == '%' {
+			b = b[:len(b)-1]
+		}
+		v, err := strconv.ParseInt(string(b), 10, 64)
 		if err != nil {
 			panic("invalid percentage: " + string(p.s.Literal))
 		}

@@ -489,6 +489,7 @@ func (s *Scanner) numeric(c rune) {
 		s.Literal = lit[:len(lit)+len(s.Literal)]
 	} else if p[0] == '%' {
 		s.Token = Percentage
+		s.Literal = append(s.Literal, '%')
 		s.source.GetRune()
 	} else {
 		s.Token = Number

@@ -58,7 +58,7 @@ var parseDeclTests = []struct {
 			{Type: ValueComma},
 			{Type: ValueNumber, Raw: b("4.31e+9"), Data: math.Float64bits(4.31e+9)},
 			{Type: ValueComma},
-			{Type: ValuePercentage, Raw: b("39"), Data: 39},
+			{Type: ValuePercentage, Raw: b("39%"), Data: 39},
 		})},
 	},
 	{
@@ -133,7 +133,7 @@ func fprintVal(buf *bytes.Buffer, val Value) {
 	if val.Pos != (Position{}) {
 		fmt.Fprintf(buf, "%d:%d:", val.Pos.Line, val.Pos.Col)
 	}
-	fmt.Fprintf(buf, "%s:%q/%q:%x", val.Type, string(val.Raw), string(val.Value), val.Data)
+	fmt.Fprintf(buf, "%s:%q/%q:0x%x", val.Type, string(val.Raw), string(val.Value), val.Data)
 }
 
 func fprintDecl(buf *bytes.Buffer, decl Decl) {
