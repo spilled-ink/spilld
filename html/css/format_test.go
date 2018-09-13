@@ -1,6 +1,7 @@
 package css
 
 import (
+	"math"
 	"testing"
 )
 
@@ -20,6 +21,18 @@ var formatDeclTests = []struct {
 			},
 		},
 		want: `background: url("https://example.com/\"a\""), blue;`,
+	},
+	{
+		name: "url_encoding",
+		decl: Decl{
+			Property: b("vals"),
+			Values: []Value{
+				{Type: ValueInteger, Data: 1483},
+				{Type: ValueNumber, Data: math.Float64bits(1.97e+10)},
+				{Type: ValuePercentage, Data: 19},
+			},
+		},
+		want: `vals: 1483 1.97e+10 19%;`,
 	},
 }
 

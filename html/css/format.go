@@ -1,5 +1,10 @@
 package css
 
+import (
+	"math"
+	"strconv"
+)
+
 func appendEscapedString(dst, src []byte) []byte {
 	for _, c := range src {
 		switch c {
@@ -34,10 +39,15 @@ func AppendValue(dst []byte, v *Value) []byte {
 		dst = appendEscapedString(dst, v.Value)
 		dst = append(dst, `")`...)
 	case ValueDelim:
+		dst = appendEscapedString(dst, v.Value)
 	case ValueNumber:
+		f := math.Float64frombits(v.Data)
+		dst = strconv.AppendFloat(dst, f, 'e', -1, 64)
 	case ValueInteger:
+		dst = strconv.AppendInt(dst, int64(v.Data), 10)
 	case ValuePercentage:
-		panic("TODO")
+		dst = strconv.AppendInt(dst, int64(v.Data), 10)
+		dst = append(dst, '%')
 	case ValueDimension:
 		panic("TODO")
 	case ValueUnicodeRange:

@@ -2,6 +2,7 @@ package css
 
 import (
 	"math"
+	"strconv"
 )
 
 // Parser parses CSS.
@@ -72,7 +73,7 @@ func (p *Parser) parseDecl(d *Decl) bool {
 		}
 		v := &d.Values[len(d.Values)-1]
 		v.clear()
-		v.Type = valueType(p.s.Token, p.s.TypeFlag)
+		v.Type, v.Data = p.valueType()
 		v.Pos = Position{Line: p.s.Line, Col: p.s.Col}
 		v.Raw = append(v.Raw, p.s.Literal...)
 		v.Value = append(v.Value, p.s.Value...)
@@ -81,46 +82,58 @@ func (p *Parser) parseDecl(d *Decl) bool {
 	return true
 }
 
-func valueType(t Token, flag TypeFlag) ValueType {
-	switch t {
+func (p *Parser) valueType() (t ValueType, data uint64) {
+	switch p.s.Token {
 	case Ident:
-		return ValueIdent
+		return ValueIdent, 0
 	case Function:
-		return ValueFunction
+		return ValueFunction, 0
 	case Hash:
 		// TODO: check flag to see if it's a ValueHashID
-		return ValueHash
+		return ValueHash, 0
 	case String:
-		return ValueString
+		return ValueString, 0
 	case URL:
-		return ValueURL
+		return ValueURL, 0
 	case Delim:
-		return ValueDelim
+		return ValueDelim, 0
 	case Number:
-		if flag == TypeFlagInteger {
-			return ValueInteger
+		if p.s.TypeFlag == TypeFlagInteger {
+			v, err := strconv.ParseInt(string(p.s.Literal), 10, 64)
+			if err != nil {
+				panic("invalid integer: " + string(p.s.Literal))
+			}
+			return ValueInteger, uint64(v)
 		}
-		return ValueNumber
+		v, err := strconv.ParseFloat(string(p.s.Literal), 64)
+		if err != nil {
+			panic("invalid float: " + string(p.s.Literal))
+		}
+		return ValueNumber, math.Float64bits(v)
 	case Percentage:
-		return ValuePercentage
+		v, err := strconv.ParseInt(string(p.s.Literal), 10, 64)
+		if err != nil {
+			panic("invalid percentage: " + string(p.s.Literal))
+		}
+		return ValuePercentage, uint64(v)
 	case Dimension:
-		return ValueDimension
+		return ValueDimension, 0 // TODO
 	case UnicodeRange:
-		return ValueUnicodeRange
+		return ValueUnicodeRange, 0 // TODO
 	case IncludeMatch:
-		return ValueIncludeMatch
+		return ValueIncludeMatch, 0
 	case DashMatch:
-		return ValueDashMatch
+		return ValueDashMatch, 0
 	case PrefixMatch:
-		return ValuePrefixMatch
+		return ValuePrefixMatch, 0
 	case SuffixMatch:
-		return ValueSuffixMatch
+		return ValueSuffixMatch, 0
 	case SubstringMatch:
-		return ValueSubstringMatch
+		return ValueSubstringMatch, 0
 	case Comma:
-		return ValueComma
+		return ValueComma, 0
 	}
-	return ValueUnknown
+	return ValueUnknown, 0
 }
 
 // Position is a line and column byte offset within a source document.

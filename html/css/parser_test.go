@@ -3,6 +3,7 @@ package css
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -44,13 +45,19 @@ var parseDeclTests = []struct {
 		},
 	},
 	{
-		input: `list: a, "b", c;`,
+		input: `list: a, "b", c, 7, 4.31e+9, 39%;`,
 		want: []Decl{decl("list", []Value{
 			{Type: ValueIdent, Raw: b("a"), Value: b("a")},
 			{Type: ValueComma},
 			{Type: ValueString, Raw: b(`"b"`), Value: b("b")},
 			{Type: ValueComma},
 			{Type: ValueIdent, Raw: b("c"), Value: b("c")},
+			{Type: ValueComma},
+			{Type: ValueInteger, Raw: b("7"), Data: 7},
+			{Type: ValueComma},
+			{Type: ValueNumber, Raw: b("4.31e+9"), Data: math.Float64bits(4.31e+9)},
+			{Type: ValueComma},
+			{Type: ValuePercentage, Raw: b("39"), Data: 39},
 		})},
 	},
 }
