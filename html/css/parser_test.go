@@ -16,10 +16,10 @@ var parseDeclTests = []struct {
 	pos   bool
 }{
 	{
-		input: `border: 1px solid #ababab; padding: 0; background: url("https://example.com/foo.svg")`,
+		input: `border: 1 solid #ababab; padding: 0; background: url("https://example.com/foo.svg")`,
 		want: []Decl{
 			decl("border", []Value{
-				{Type: ValueDimension, Raw: b("1px")},
+				{Type: ValueInteger, Raw: b("1"), Data: 1},
 				{Type: ValueIdent, Raw: b("solid"), Value: b("solid")},
 				{Type: ValueHash, Raw: b("#ababab"), Value: b("ababab")},
 			}),
@@ -40,11 +40,12 @@ var parseDeclTests = []struct {
 				{Type: ValueIdent, Raw: b("gray"), Value: b("gray")},
 			}),
 			decl("font-size", []Value{
-				{Type: ValueDimension, Raw: b("5.67em")},
+				{Type: ValueDimension, Raw: b("5.67em"), Data: math.Float64bits(5.67)},
 			}),
 		},
 	},
 	{
+		name:  "value types",
 		input: `list: a, "b", c, 7, 4.31e+9, 39%;`,
 		want: []Decl{decl("list", []Value{
 			{Type: ValueIdent, Raw: b("a"), Value: b("a")},
@@ -58,6 +59,15 @@ var parseDeclTests = []struct {
 			{Type: ValueNumber, Raw: b("4.31e+9"), Data: math.Float64bits(4.31e+9)},
 			{Type: ValueComma},
 			{Type: ValuePercentage, Raw: b("39"), Data: 39},
+		})},
+	},
+	{
+		name:  "unicode ranges",
+		input: `list: u+123???, u+5-f;`,
+		want: []Decl{decl("list", []Value{
+			{Type: ValueUnicodeRange, Raw: b("u+123???"), Data: 0x123000<<32 | 0x123fff},
+			{Type: ValueComma},
+			{Type: ValueUnicodeRange, Raw: b("u+5-f"), Data: 0x5<<32 | 0xf},
 		})},
 	},
 }

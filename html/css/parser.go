@@ -1,6 +1,7 @@
 package css
 
 import (
+	"bytes"
 	"math"
 	"strconv"
 )
@@ -117,9 +118,15 @@ func (p *Parser) valueType() (t ValueType, data uint64) {
 		}
 		return ValuePercentage, uint64(v)
 	case Dimension:
-		return ValueDimension, 0 // TODO
+		b := bytes.TrimSuffix(p.s.Literal, p.s.Unit)
+		v, err := strconv.ParseFloat(string(b), 64)
+		if err != nil {
+			panic("invalid dimension: " + string(p.s.Literal))
+		}
+		return ValueDimension, math.Float64bits(v)
 	case UnicodeRange:
-		return ValueUnicodeRange, 0 // TODO
+		v := uint64(p.s.RangeStart)<<32 | uint64(p.s.RangeEnd)
+		return ValueUnicodeRange, v
 	case IncludeMatch:
 		return ValueIncludeMatch, 0
 	case DashMatch:
@@ -177,7 +184,7 @@ const (
 	ValueInteger                         // int
 	ValuePercentage                      // percent
 	ValueDimension                       // dim
-	ValueUnicodeRange                    // unocde-range
+	ValueUnicodeRange                    // unicode-range
 	ValueIncludeMatch                    // include-match
 	ValueDashMatch                       // dash-match
 	ValuePrefixMatch                     // prefix-match
