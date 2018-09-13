@@ -1,9 +1,5 @@
 package css
 
-import (
-	"bytes"
-)
-
 func appendEscapedString(dst, src []byte) []byte {
 	for _, c := range src {
 		switch c {
@@ -20,60 +16,58 @@ func appendEscapedString(dst, src []byte) []byte {
 	return dst
 }
 
-func FormatRaw(d *Decl) {
-	d.PropertyRaw = appendEscapedString(d.PropertyRaw[:0], d.Property)
-	for i := range d.Values {
-		v := &d.Values[i]
-		switch v.Type {
-		case ValueIdent:
-			v.Raw = appendEscapedString(v.Raw[:0], v.Value)
-		case ValueFunction:
-			panic("TODO")
-		case ValueHash, ValueHashID:
-			v.Raw = append(v.Raw[:0], '#')
-			v.Raw = appendEscapedString(v.Raw, v.Value)
-		case ValueString:
-			v.Raw = append(v.Raw[:0], '"')
-			v.Raw = appendEscapedString(v.Raw, v.Value)
-			v.Raw = append(v.Raw, '"')
-		case ValueURL:
-			v.Raw = append(v.Raw[:0], `url("`...)
-			v.Raw = appendEscapedString(v.Raw, v.Value)
-			v.Raw = append(v.Raw, `")`...)
-		case ValueDelim:
-		case ValueNumber:
-		case ValueInteger:
-		case ValuePercentage:
-			panic("TODO")
-		case ValueDimension:
-			panic("TODO")
-		case ValueUnicodeRange:
-			panic("TODO")
-		case ValueIncludeMatch:
-			v.Raw = append(v.Raw[:0], '~', '=')
-		case ValueDashMatch:
-			v.Raw = append(v.Raw[:0], '|', '=')
-		case ValuePrefixMatch:
-			v.Raw = append(v.Raw[:0], '^', '=')
-		case ValueSuffixMatch:
-			v.Raw = append(v.Raw[:0], '$', '=')
-		case ValueSubstringMatch:
-			v.Raw = append(v.Raw[:0], '*', '=')
-		case ValueComma:
-			v.Raw = append(v.Raw[:0], ',')
-		}
+func AppendValue(dst []byte, v *Value) []byte {
+	switch v.Type {
+	case ValueIdent:
+		dst = appendEscapedString(dst, v.Value)
+	case ValueFunction:
+		panic("TODO")
+	case ValueHash, ValueHashID:
+		dst = append(dst, '#')
+		dst = appendEscapedString(dst, v.Value)
+	case ValueString:
+		dst = append(dst, '"')
+		dst = appendEscapedString(dst, v.Value)
+		dst = append(dst, '"')
+	case ValueURL:
+		dst = append(dst, `url("`...)
+		dst = appendEscapedString(dst, v.Value)
+		dst = append(dst, `")`...)
+	case ValueDelim:
+	case ValueNumber:
+	case ValueInteger:
+	case ValuePercentage:
+		panic("TODO")
+	case ValueDimension:
+		panic("TODO")
+	case ValueUnicodeRange:
+		panic("TODO")
+	case ValueIncludeMatch:
+		dst = append(dst, '~', '=')
+	case ValueDashMatch:
+		dst = append(dst, '|', '=')
+	case ValuePrefixMatch:
+		dst = append(dst, '^', '=')
+	case ValueSuffixMatch:
+		dst = append(dst, '$', '=')
+	case ValueSubstringMatch:
+		dst = append(dst, '*', '=')
+	case ValueComma:
+		dst = append(dst, ',')
 	}
+	return dst
 }
 
-func FormatDecl(dst *bytes.Buffer, d *Decl) {
-	FormatRaw(d)
-	dst.Write(d.PropertyRaw)
-	dst.WriteString(": ")
-	for i, val := range d.Values {
-		if i > 0 && val.Type != ValueComma {
-			dst.WriteByte(' ')
+func AppendDecl(dst []byte, d *Decl) []byte {
+	dst = appendEscapedString(dst, d.Property)
+	dst = append(dst, ':', ' ')
+	for i := range d.Values {
+		v := &d.Values[i]
+		if i > 0 && v.Type != ValueComma {
+			dst = append(dst, ' ')
 		}
-		dst.Write(val.Raw)
+		dst = AppendValue(dst, v)
 	}
-	dst.WriteByte(';')
+	dst = append(dst, ';')
+	return dst
 }

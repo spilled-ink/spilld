@@ -1,7 +1,6 @@
 package css
 
 import (
-	"bytes"
 	"testing"
 )
 
@@ -24,14 +23,12 @@ var formatDeclTests = []struct {
 	},
 }
 
-func TestFormatDecl(t *testing.T) {
+func TestAppendDecl(t *testing.T) {
 	for _, test := range formatDeclTests {
 		t.Run(test.name, func(t *testing.T) {
-			buf := new(bytes.Buffer)
-			FormatDecl(buf, &test.decl)
-			got := buf.String()
+			got := string(AppendDecl(nil, &test.decl))
 			if got != test.want {
-				t.Errorf("FormatDecl:\n  got: %q\n want: %q", got, test.want)
+				t.Errorf(" got: %q\nwant: %q", got, test.want)
 			}
 		})
 	}
