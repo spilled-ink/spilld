@@ -1,8 +1,6 @@
 package css
 
 import (
-	"bytes"
-	"io"
 	"math"
 )
 
@@ -119,6 +117,8 @@ func valueType(t Token, flag TypeFlag) ValueType {
 		return ValueSuffixMatch
 	case SubstringMatch:
 		return ValueSubstringMatch
+	case Comma:
+		return ValueComma
 	}
 	return ValueUnknown
 }
@@ -170,6 +170,7 @@ const (
 	ValuePrefixMatch                     // prefix-match
 	ValueSuffixMatch                     // suffix-match
 	ValueSubstringMatch                  // substr-match
+	ValueComma                           // comma
 )
 
 // TODO func (v *Value) Dimension() (value, uint []byte)
@@ -222,22 +223,6 @@ func (d *Decl) clear() {
 		d.Values = d.Values[:0]
 	}
 	d.BangImportant = false
-}
-
-func FprintDecl(dst io.Writer, d *Decl) (n int, err error) {
-	buf := new(bytes.Buffer)
-	buf.Write(d.PropertyRaw) // TODO: re-encode Property
-	buf.WriteString(": ")
-	for i, val := range d.Values {
-		if i > 0 {
-			buf.WriteByte(' ')
-		}
-		buf.Write(val.Raw) // TODO: re-encode Decl
-	}
-
-	buf.WriteByte(';')
-
-	return dst.Write(buf.Bytes())
 }
 
 /*

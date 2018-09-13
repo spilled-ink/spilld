@@ -43,6 +43,16 @@ var parseDeclTests = []struct {
 			}),
 		},
 	},
+	{
+		input: `list: a, "b", c;`,
+		want: []Decl{decl("list", []Value{
+			{Type: ValueIdent, Raw: b("a"), Value: b("a")},
+			{Type: ValueComma},
+			{Type: ValueString, Raw: b(`"b"`), Value: b("b")},
+			{Type: ValueComma},
+			{Type: ValueIdent, Raw: b("c"), Value: b("c")},
+		})},
+	},
 }
 
 func b(s string) []byte { return []byte(s) }
