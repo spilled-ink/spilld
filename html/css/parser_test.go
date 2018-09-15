@@ -3,7 +3,6 @@ package css
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ var parseDeclTests = []struct {
 		input: `border: 1 solid #ababab; padding: 0; background: url("https://example.com/foo.svg")`,
 		want: []Decl{
 			decl("border", []Value{
-				{Type: ValueInteger, Raw: b("1"), Data: 1},
+				{Type: ValueInteger, Raw: b("1"), Number: 1},
 				{Type: ValueIdent, Raw: b("solid"), Value: b("solid")},
 				{Type: ValueHash, Raw: b("#ababab"), Value: b("ababab")},
 			}),
@@ -34,13 +33,25 @@ var parseDeclTests = []struct {
 		},
 	},
 	{
+		input: `background:url("http://sketch.io/bar"), blue;`,
+		want: []Decl{decl("background", []Value{
+			{
+				Type:  ValueURL,
+				Raw:   b(`url("http://sketch.io/bar")`),
+				Value: b("http://sketch.io/bar"),
+			},
+			{Type: ValueComma},
+			{Type: ValueIdent, Raw: b("blue"), Value: b("blue")},
+		})},
+	},
+	{
 		input: `color: gray /* comment */; font-size: 5.67em;`,
 		want: []Decl{
 			decl("color", []Value{
 				{Type: ValueIdent, Raw: b("gray"), Value: b("gray")},
 			}),
 			decl("font-size", []Value{
-				{Type: ValueDimension, Raw: b("5.67em"), Data: math.Float64bits(5.67)},
+				{Type: ValueDimension, Raw: b("5.67em"), Number: 5.67, Value: b("em")},
 			}),
 		},
 	},
@@ -54,20 +65,20 @@ var parseDeclTests = []struct {
 			{Type: ValueComma},
 			{Type: ValueIdent, Raw: b("c"), Value: b("c")},
 			{Type: ValueComma},
-			{Type: ValueInteger, Raw: b("7"), Data: 7},
+			{Type: ValueInteger, Raw: b("7"), Number: 7},
 			{Type: ValueComma},
-			{Type: ValueNumber, Raw: b("4.31e+9"), Data: math.Float64bits(4.31e+9)},
+			{Type: ValueNumber, Raw: b("4.31e+9"), Number: 4.31e+9},
 			{Type: ValueComma},
-			{Type: ValuePercentage, Raw: b("39%"), Data: 39},
+			{Type: ValuePercentage, Raw: b("39%"), Number: 39},
 		})},
 	},
 	{
 		name:  "unicode ranges",
 		input: `list: u+123???, u+5-f;`,
 		want: []Decl{decl("list", []Value{
-			{Type: ValueUnicodeRange, Raw: b("u+123???"), Data: 0x123000<<32 | 0x123fff},
+			{Type: ValueUnicodeRange, Raw: b("u+123???")},
 			{Type: ValueComma},
-			{Type: ValueUnicodeRange, Raw: b("u+5-f"), Data: 0x5<<32 | 0xf},
+			{Type: ValueUnicodeRange, Raw: b("u+5-f")},
 		})},
 	},
 }
@@ -133,7 +144,7 @@ func fprintVal(buf *bytes.Buffer, val Value) {
 	if val.Pos != (Position{}) {
 		fmt.Fprintf(buf, "%d:%d:", val.Pos.Line, val.Pos.Col)
 	}
-	fmt.Fprintf(buf, "%s:%q/%q:0x%x", val.Type, string(val.Raw), string(val.Value), val.Data)
+	fmt.Fprintf(buf, "%s:%q/%q:0x%f", val.Type, string(val.Raw), string(val.Value), val.Number)
 }
 
 func fprintDecl(buf *bytes.Buffer, decl Decl) {

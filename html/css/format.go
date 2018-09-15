@@ -1,7 +1,6 @@
 package css
 
 import (
-	"math"
 	"strconv"
 )
 
@@ -40,16 +39,14 @@ func AppendValue(dst []byte, v *Value) []byte {
 		dst = append(dst, `")`...)
 	case ValueDelim:
 		dst = appendEscapedString(dst, v.Value)
-	case ValueNumber:
-		f := math.Float64frombits(v.Data)
-		dst = strconv.AppendFloat(dst, f, 'e', -1, 64)
-	case ValueInteger:
-		dst = strconv.AppendInt(dst, int64(v.Data), 10)
+	case ValueNumber, ValueInteger:
+		dst = strconv.AppendFloat(dst, v.Number, 'f', -1, 64)
 	case ValuePercentage:
-		dst = strconv.AppendInt(dst, int64(v.Data), 10)
+		dst = strconv.AppendFloat(dst, v.Number, 'f', -1, 64)
 		dst = append(dst, '%')
 	case ValueDimension:
-		panic("TODO")
+		dst = strconv.AppendFloat(dst, v.Number, 'f', -1, 64)
+		dst = append(dst, v.Value...)
 	case ValueUnicodeRange:
 		panic("TODO")
 	case ValueIncludeMatch:

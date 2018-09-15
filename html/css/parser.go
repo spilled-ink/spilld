@@ -2,7 +2,6 @@ package css
 
 import (
 	"bytes"
-	"math"
 	"strconv"
 )
 
@@ -74,16 +73,21 @@ func (p *Parser) parseDecl(d *Decl) bool {
 		}
 		v := &d.Values[len(d.Values)-1]
 		v.clear()
-		v.Type, v.Data = p.valueType()
+		v.Type, v.Number = p.valueType()
 		v.Pos = Position{Line: p.s.Line, Col: p.s.Col}
 		v.Raw = append(v.Raw, p.s.Literal...)
-		v.Value = append(v.Value, p.s.Value...)
+		if v.Type == ValueDimension {
+			// TODO: maybe merge p.s.Unit and p.s.Value?
+			v.Value = append(v.Value, p.s.Unit...)
+		} else {
+			v.Value = append(v.Value, p.s.Value...)
+		}
 		p.next()
 	}
 	return true
 }
 
-func (p *Parser) valueType() (t ValueType, data uint64) {
+func (p *Parser) valueType() (t ValueType, number float64) {
 	switch p.s.Token {
 	case Ident:
 		return ValueIdent, 0
@@ -104,33 +108,34 @@ func (p *Parser) valueType() (t ValueType, data uint64) {
 			if err != nil {
 				panic("invalid integer: " + string(p.s.Literal))
 			}
-			return ValueInteger, uint64(v)
+			return ValueInteger, float64(v)
 		}
 		v, err := strconv.ParseFloat(string(p.s.Literal), 64)
 		if err != nil {
 			panic("invalid float: " + string(p.s.Literal))
 		}
-		return ValueNumber, math.Float64bits(v)
+		return ValueNumber, v
 	case Percentage:
 		b := p.s.Literal
 		if len(b) > 0 && b[len(b)-1] == '%' {
 			b = b[:len(b)-1]
 		}
-		v, err := strconv.ParseInt(string(b), 10, 64)
+		v, err := strconv.ParseFloat(string(b), 64)
 		if err != nil {
 			panic("invalid percentage: " + string(p.s.Literal))
 		}
-		return ValuePercentage, uint64(v)
+		return ValuePercentage, v
 	case Dimension:
 		b := bytes.TrimSuffix(p.s.Literal, p.s.Unit)
 		v, err := strconv.ParseFloat(string(b), 64)
 		if err != nil {
 			panic("invalid dimension: " + string(p.s.Literal))
 		}
-		return ValueDimension, math.Float64bits(v)
+		return ValueDimension, v
 	case UnicodeRange:
 		v := uint64(p.s.RangeStart)<<32 | uint64(p.s.RangeEnd)
-		return ValueUnicodeRange, v
+		_ = v // TODO
+		return ValueUnicodeRange, 0
 	case IncludeMatch:
 		return ValueIncludeMatch, 0
 	case DashMatch:
@@ -164,11 +169,22 @@ type Decl struct {
 }
 
 type Value struct {
-	Pos   Position
-	Type  ValueType
-	Value []byte // escaped, processed value
-	Raw   []byte // unescaped raw bytes underlying value
-	Data  uint64 // encodes type-specific data, read via methods
+	Pos  Position
+	Type ValueType
+	Raw  []byte
+
+	// Number holds the numeric value for a:
+	//	ValueNumber, ValuePercentage, ValueDimension, ValueHash
+	//
+	Number float64
+
+	// Value holds processed bytes for the value type.
+	//	ValueIdent:      escaped text
+	//	ValueString:     escaped text
+	//	ValueURL:        escaped URL
+	//	ValueDimension:  the unit name
+	//	ValueHashID:     escaped ID value
+	Value []byte
 }
 
 type ValueType int
@@ -185,7 +201,7 @@ const (
 	ValueURL                             // url
 	ValueDelim                           // delim
 	ValueNumber                          // num
-	ValueInteger                         // int
+	ValueInteger                         // int TODO remove
 	ValuePercentage                      // percent
 	ValueDimension                       // dim
 	ValueUnicodeRange                    // unicode-range
@@ -197,28 +213,11 @@ const (
 	ValueComma                           // comma
 )
 
-// TODO func (v *Value) Dimension() (value, uint []byte)
-// TODO func (v *Value) URL() []byte
-
 func (v *Value) Range() (start, end uint32) {
 	if v.Type != ValueUnicodeRange {
 		return 0, 0
 	}
-	return uint32(v.Data >> 32), uint32(v.Data)
-}
-
-func (v *Value) Number() float64 {
-	if v.Type != ValueNumber {
-		return 0
-	}
-	return math.Float64frombits(v.Data)
-}
-
-func (v *Value) Integer() int64 {
-	if v.Type != ValueInteger {
-		return 0
-	}
-	return int64(v.Data)
+	panic("TODO")
 }
 
 func (v *Value) clear() {

@@ -1,7 +1,6 @@
 package css
 
 import (
-	"math"
 	"testing"
 )
 
@@ -27,12 +26,13 @@ var formatDeclTests = []struct {
 		decl: Decl{
 			Property: b("vals"),
 			Values: []Value{
-				{Type: ValueInteger, Data: 1483},
-				{Type: ValueNumber, Data: math.Float64bits(1.97e+10)},
-				{Type: ValuePercentage, Data: 19},
+				{Type: ValueInteger, Number: 1483},
+				{Type: ValueNumber, Number: 1.97},
+				{Type: ValuePercentage, Number: 19},
+				{Type: ValueDimension, Number: 2.3, Value: b("em")},
 			},
 		},
-		want: `vals: 1483 1.97e+10 19%;`,
+		want: `vals: 1483 1.97 19% 2.3em;`,
 	},
 }
 
