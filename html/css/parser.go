@@ -79,6 +79,13 @@ func (p *Parser) parseDecl(d *Decl) bool {
 		if v.Type == ValueDimension {
 			// TODO: maybe merge p.s.Unit and p.s.Value?
 			v.Value = append(v.Value, p.s.Unit...)
+		} else if p.s.Token == RightParen {
+			// TODO: remove when ValueFunction has an Args?
+			v.Value = append(v.Value, ')')
+		} else if v.Type == ValueDelim {
+			v.Value = append(v.Value, p.s.Literal...)
+		} else if v.Type == ValueUnicodeRange {
+			v.Value = append(v.Value, p.s.Literal...)
 		} else {
 			v.Value = append(v.Value, p.s.Value...)
 		}
@@ -100,7 +107,7 @@ func (p *Parser) valueType() (t ValueType, number float64) {
 		return ValueString, 0
 	case URL:
 		return ValueURL, 0
-	case Delim:
+	case Delim, RightParen:
 		return ValueDelim, 0
 	case Number:
 		if p.s.TypeFlag == TypeFlagInteger {
@@ -184,7 +191,10 @@ type Value struct {
 	//	ValueURL:        escaped URL
 	//	ValueDimension:  the unit name
 	//	ValueHashID:     escaped ID value
+	//	ValueFunction:   the function name
 	Value []byte
+
+	// TODO: Args []Value for a function ?
 }
 
 type ValueType int

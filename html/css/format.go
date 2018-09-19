@@ -25,7 +25,8 @@ func AppendValue(dst []byte, v *Value) []byte {
 	case ValueIdent:
 		dst = appendEscapedString(dst, v.Value)
 	case ValueFunction:
-		panic("TODO")
+		dst = appendEscapedString(dst, v.Value)
+		dst = append(dst, '(')
 	case ValueHash, ValueHashID:
 		dst = append(dst, '#')
 		dst = appendEscapedString(dst, v.Value)
@@ -48,7 +49,7 @@ func AppendValue(dst []byte, v *Value) []byte {
 		dst = strconv.AppendFloat(dst, v.Number, 'f', -1, 64)
 		dst = append(dst, v.Value...)
 	case ValueUnicodeRange:
-		panic("TODO")
+		dst = append(dst, v.Value...)
 	case ValueIncludeMatch:
 		dst = append(dst, '~', '=')
 	case ValueDashMatch:
@@ -70,8 +71,16 @@ func AppendDecl(dst []byte, d *Decl) []byte {
 	dst = append(dst, ':', ' ')
 	for i := range d.Values {
 		v := &d.Values[i]
-		if i > 0 && v.Type != ValueComma {
-			dst = append(dst, ' ')
+		if i > 0 {
+			switch v.Type {
+			case ValueComma, ValueFunction, ValueDelim:
+			default:
+				switch d.Values[i-1].Type {
+				case ValueFunction:
+				default:
+					dst = append(dst, ' ')
+				}
+			}
 		}
 		dst = AppendValue(dst, v)
 	}
