@@ -4,9 +4,9 @@ package css
 
 import "strconv"
 
-const _ValueType_name = "ValueUknownidentfunctionhashhash-idstringurldelimnumintpercentdimunicode-rangeinclude-matchdash-matchprefix-matchsuffix-matchsubstr-matchcomma"
+const _ValueType_name = "ValueUknownidentfunctionhashhash-idstringurldelimnumint TODO removepercentdimunicode-rangeinclude-matchdash-matchprefix-matchsuffix-matchsubstr-matchcomma"
 
-var _ValueType_index = [...]uint8{0, 11, 16, 24, 28, 35, 41, 44, 49, 52, 55, 62, 65, 78, 91, 101, 113, 125, 137, 142}
+var _ValueType_index = [...]uint8{0, 11, 16, 24, 28, 35, 41, 44, 49, 52, 67, 74, 77, 90, 103, 113, 125, 137, 149, 154}
 
 func (i ValueType) String() string {
 	if i < 0 || i >= ValueType(len(_ValueType_index)-1) {
