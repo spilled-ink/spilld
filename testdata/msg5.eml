@@ -1,0 +1,230 @@
+Received: by mail-ot1-f44.google.com with SMTP id 14so31709979oth.2 for
+     <abcde@spilled.ink>; Sat, 20 Oct 2018 04:54:30 -0700 (PDT)
+X-Google-Dkim-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=1e100.net;
+     s=20161025;
+     h=x-gm-message-state:delivered-to:delivered-to:dkim-signature
+     :dkim-signature:from:reply-to:to:message-id:subject:mime-version
+     :bounces-to:date:feedback-id;
+     bh=sI2S1sSn6ilV6/1IaiAlMUPg0lfc6fd7plSl0ccSTpo=;
+     b=o1o8m6+LM/qLkQNKsUJALeSDNEq18fZqlbs3P1hszJfdPnFDp/sUojDN/2vtnlpAbK
+     JD56fl/adOz4/HH+JWj9J8Du4w35QRf4IWyM42RAS0s7N6QRAUzvGJypweg40eNq/aCd
+     pUTuSN5o4Nen5CbxlKa8ISwBpWnn9IIgmM/bfA+jUdc4r5t9AxuJbGJOigzuhEeYBKkx
+     rfgitr9fNzOUBrkFUHCRW+yJ/Vi86yuauoREI6Aa6bDaW5Dgv+TuRgf9SCs/NPQnXJ9X
+     49EVRNxs3YL/uyOuwQaGfm2bNxbXvLqcVQrd6Rps9rY6M5E4kssd8A0RF5ZzjJE8S5Oe
+     ELEA==
+X-Gm-Message-State: ABuFfojJ5Eb/LrmDdu8phRvu3cFcAksm1gs8F+dRP6gfCBzYizd5BzX6
+     0JHUweKM429Qe/nvUX4FLI8ySVd+Cd1PC0uvTTd1W79+HrXAgjw=
+X-Received: by 2002:a9d:44a8:: with SMTP id
+     v40mr22064460ote.219.1540036469981; Sat, 20 Oct 2018 04:54:29 -0700
+     (PDT)
+X-Forwarded-To: abcde@spilled.ink
+X-Forwarded-For: abcde.abcdefgh@gmail.com abcde@spilled.ink
+Delivered-To: abcde.abcdefgh@gmail.com
+Received: by 2002:ac9:216b:0:0:0:0:0 with SMTP id d43-v6csp451099oca; Sat, 20
+     Oct 2018 04:54:28 -0700 (PDT)
+X-Received: by 2002:a2e:8797:: with SMTP id
+     n23-v6mr25010893lji.173.1540036468474; Sat, 20 Oct 2018 04:54:28 -0700
+     (PDT)
+Arc-Seal: i=2; a=rsa-sha256; t=1540036468; cv=pass; d=google.com;
+     s=arc-20160816;
+     b=LGp2ZN6HBZBdkaD8QPFTyi4FJMRK/TN8INcUSKRDL/b+DdCOnQxssG1eESqEgAOoVk
+     vAUTz1KlOhFmyrchfPdHQNrulOquh58janS78HTLwiXjmyVlwfcO5XryzkzqDDb8tKQk
+     qhU6MjZ42UbRPxixYs+n540Q12pfZK5JNhJphc8lmru1psPQ1lPlFsxoB1fvJlbhX9PA
+     xBbDKI7ZsgWaEdQJ4Fz4g1RTe9PEg/luTNbXNdW+aKMmmUp+xWM0qC/2WSDf7TtIKYzz
+     vsDhSenNB94VH60loEGUm+Csbz2MqOebZjxUNrSjPP/8z3Oh01H0lfYwwbmavO8UzaOR
+     HEBw==
+Arc-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed; d=google.com;
+     s=arc-20160816;
+     h=feedback-id:date:bounces-to:mime-version:subject:message-id:to
+     :reply-to:from:dkim-signature:dkim-signature:delivered-to;
+     bh=sI2S1sSn6ilV6/1IaiAlMUPg0lfc6fd7plSl0ccSTpo=;
+     b=lF69USg7G8h938bv0+tQXcqtAf4+RuudgTeAlyqVwcjFOTyyu7wOFszoYUyznGwUR4
+     OD2rDRJmM3rPqns520IEIJAlnpAlqZtmeTUdIKo5dr0yxlMuFDquMJyHrQUjRae6C5rs
+     dXoeXFyO8L4lW+d8Gjp+V1mIrZjaH+9m44rfzaXvEavCyLHYPaDIK9Lr5TrPfHRR7h9o
+     RYpLxXuVD0w55L9NiUlOPCyOcF9EhY+U1rOBWtq4MH6hCUhAXyYmpBShYTQlODin5JLD
+     mK9ypiRO6ASjU2yHDXK7Zqu+Ikwix+u9LPw1ANSU1qahBgzTuT/ebrN2nQtykcubRGZT
+     4DtA==
+Arc-Authentication-Results: i=2; mx.google.com; dkim=pass
+     header.i=@amazon.com header.s=eaxkvsyelrnxjh4cicqyjjmtjpetuwjx
+     header.b=cFppI7DO; dkim=pass header.i=@amazonses.com
+     header.s=ug7nbtf4gccmlpwj322ax3p6ow6yfsug header.b=PmrfcuiZ; arc=pass
+     (i=1 spf=pass spfdomain=bounces.amazon.com dkim=pass
+     dkdomain=amazon.com dkim=pass dkdomain=amazonses.com dmarc=pass
+     fromdomain=amazon.com); spf=neutral (google.com: 209.85.220.41 is
+     neither permitted nor denied by best guess record for domain of
+     abcde.abcdefgh+caf_=abcde.abcdefgh=gmail.com@abcdef.com)
+     smtp.mailfrom="abcde.abcdefgh+caf_=abcde.abcdefgh=gmail.com@abcdef.com"; dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE)
+     header.from=amazon.com
+Return-Path: <abcde.abcdefgh+caf_=abcde.abcdefgh=gmail.com@abcdef.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com.
+     [209.85.220.41]) by mx.google.com with SMTPS id
+     m67-v6sor12877930lje.13.2018.10.20.04.54.27 for
+     <abcde.abcdefgh@gmail.com> (Google Transport Security); Sat, 20 Oct
+     2018 04:54:28 -0700 (PDT)
+Received-Spf: neutral (google.com: 209.85.220.41 is neither permitted nor
+     denied by best guess record for domain of
+     abcde.abcdefgh+caf_=abcde.abcdefgh=gmail.com@abcdef.com)
+     client-ip=209.85.220.41;
+Authentication-Results: mx.google.com; dkim=pass header.i=@amazon.com
+     header.s=eaxkvsyelrnxjh4cicqyjjmtjpetuwjx header.b=cFppI7DO; dkim=pass
+     header.i=@amazonses.com header.s=ug7nbtf4gccmlpwj322ax3p6ow6yfsug
+     header.b=PmrfcuiZ; arc=pass (i=1 spf=pass spfdomain=bounces.amazon.com
+     dkim=pass dkdomain=amazon.com dkim=pass dkdomain=amazonses.com
+     dmarc=pass fromdomain=amazon.com); spf=neutral (google.com:
+     209.85.220.41 is neither permitted nor denied by best guess record for
+     domain of abcde.abcdefgh+caf_=abcde.abcdefgh=gmail.com@abcdef.com)
+     smtp.mailfrom="abcde.abcdefgh+caf_=abcde.abcdefgh=gmail.com@abcdef.com"; dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE)
+     header.from=amazon.com
+X-Received: by 2002:a2e:8743:: with SMTP id
+     q3-v6mr4185782ljj.80.1540036467785; Sat, 20 Oct 2018 04:54:27 -0700
+     (PDT)
+X-Forwarded-To: _____.________@gmail.com
+X-X-Forwarded-For: _____.________@abcdef.com _____.________@gmail.com
+Delivered-To: _____@abcdef.com
+Received: by 2002:a19:4c04:0:0:0:0:0 with SMTP id z4-v6csp507206lfa; Sat, 20
+     Oct 2018 04:54:25 -0700 (PDT)
+X-Google-Smtp-Source: ACcGV61fqHt+0HJMqW2BHWK7OrjAtOocekyxA0QDltnLTvjhmXaWQlfCLoH+8HNmo9s38F4c0XKO
+X-Received: by 2002:ae9:e21a:: with SMTP id
+     c26-v6mr36347233qkc.249.1540036465787; Sat, 20 Oct 2018 04:54:25 -0700
+     (PDT)
+Arc-Seal: i=1; a=rsa-sha256; t=1540036465; cv=none; d=google.com;
+     s=arc-20160816;
+     b=zeVT2zpZDHQu3hKftOEnQFUu4D29w6xe5xVyh8V+b/V0lxmqb1sn1adss6K1wWtMf9
+     42d9yqNopQz8plssOjmfIdvZrAoWGBLIRZ7wxEEmECDJxZCdeunWJWdDgGee9KyYarEP
+     Y0ZcCqtWtZdn4JD4kAQx1TPJu7HfkHgjl9f/VGMu0qoj8q7LeZcvseg2Hvjrz8ylM8Oo
+     ZteWUxGt9d9XDgxQlL7coKCD40oPU3UXI1LVnEzbYQ/NkCZcLvhJ04hmVb8haJasgBDM
+     JfPQnrWuPfxZ3HP31O1+qP4HyolR6ySkKqKyiZtk0nSwUOfibOus1lSrsKPv7ybufqaE
+     gPdw==
+Arc-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com;
+     s=arc-20160816;
+     h=feedback-id:date:bounces-to:mime-version:subject:message-id:to
+     :reply-to:from:dkim-signature:dkim-signature;
+     bh=sI2S1sSn6ilV6/1IaiAlMUPg0lfc6fd7plSl0ccSTpo=;
+     b=eQ2Pk1a5R7JvZcKhG17FQqfra+KnXUngSEH5kdihqGhXUSH3vZg31ir8V7bDOxx18v
+     elaJgsQKiH3F7STiDUdHOgKDFXHEs3NkAtQissB21ZBvrJ4HkQVXpl1Zq7VJbUG6AQ6+
+     0vyw2PQ8qEycOuYwB7lJBUtOLcCl/DAQfobGoFZds/3axYFuxHUfaVzF+QrGtswFgvaN
+     C7xM1//zzohivM3utfZ496KTZkid6GOetm3GNykt1PjopKHgbMyF23LhGcLr5zzdZxwY
+     kFwRleZ2w3Kj8A0yLSAZ7Uzcrgd+G/74U63Q1+K/LfwNShDPxhX+yA2mUuvkGRymAdnV
+     BlWA==
+Arc-Authentication-Results: i=1; mx.google.com; dkim=pass
+     header.i=@amazon.com header.s=eaxkvsyelrnxjh4cicqyjjmtjpetuwjx
+     header.b=cFppI7DO; dkim=pass header.i=@amazonses.com
+     header.s=ug7nbtf4gccmlpwj322ax3p6ow6yfsug header.b=PmrfcuiZ; spf=pass
+     (google.com: domain of
+     201810201154242c16cb99decd46038b99d20cf330p0na@bounces.amazon.com
+     designates 54.240.13.17 as permitted sender)
+     smtp.mailfrom=201810201154242c16cb99decd46038b99d20cf330p0na@bounces.amazon.com; dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE)
+     header.from=amazon.com
+Return-Path: <201810201154242c16cb99decd46038b99d20cf330p0na@bounces.amazon.com>
+Received: from a13-17.smtp-out.amazonses.com (a13-17.smtp-out.amazonses.com.
+     [54.240.13.17]) by mx.google.com with ESMTPS id
+     f63-v6si1417376qkh.1.2018.10.20.04.54.25 for <abcde@abcdef.com>
+     (version=TLS1_2 cipher=ECDHE-RSA-AES128-SHA bits=128/128); Sat, 20 Oct
+     2018 04:54:25 -0700 (PDT)
+Received-Spf: pass (google.com: domain of
+     201810201154242c16cb99decd46038b99d20cf330p0na@bounces.amazon.com
+     designates 54.240.13.17 as permitted sender) client-ip=54.240.13.17;
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
+     s=eaxkvsyelrnxjh4cicqyjjmtjpetuwjx; d=amazon.com; t=1540036465;
+     h=From:Reply-To:To:Message-ID:Subject:MIME-Version:Content-Type:Date;
+     bh=ct4HC3dCDYK4EmVDoQ4nf/lCE8Sv6R8ILvwOv9tPw5s=;
+     b=cFppI7DOwvdD7aXdGOL2KmGTAi/BUQOckO90kzjFxNPx+4q4EMYXVG6L3dKogbPT
+     wTwvlWsVF53vR3NSoMj4WKdSI01E1noUTRGUO6z53kVkeOED5W7hQNxwlWrmzRsKO1X
+     j+t887NUxClm18C/Z8jPCrEiLK+RCLUFaaE3Pet8=
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
+     s=ug7nbtf4gccmlpwj322ax3p6ow6yfsug; d=amazonses.com; t=1540036465;
+     h=From:Reply-To:To:Message-ID:Subject:MIME-Version:Content-Type:Date:Feedback-ID; bh=ct4HC3dCDYK4EmVDoQ4nf/lCE8Sv6R8ILvwOv9tPw5s=;
+     b=PmrfcuiZl9PJTY0/8kNMNC0XWqB8GTWWfjXdIx2vH7/EZFfuCtXqBPEEG3qBzmFU
+     r5xJpIMXp3rOCCVCsVIuJHSGxihiwotnvqnF7YI7NVS/02zqZQkP9w9NP2r6mU/0mpk
+     E4q9CFiwjYSiZsFtPMw9yfR+Vob9eVU6AY0Iqghw=
+From: "Amazon.com" <digital-no-reply@amazon.com>
+Reply-To: digital-no-reply@amazon.com
+To: abcde@abcdef.com
+Message-ID: <0000000000000000-5c15ef40-a2bd-4c4b-956e-8579eb4baa27-000000@email.amazonses.com>
+Subject: Purchase of A book of incredible insight that is widely regarded
+     So smart
+X-Amazon-Mail-Relay-Type: notification
+Bounces-To: 000000000154242c16cb99decd46038b99d20cf330p0na@bounces.amazon.com
+X-Amazon-Metadata: CA=000000Y5715I76-CU=000000AHTWDXVF
+X-Original-Messageid: <urn.rtn.msg.201810201154242c16cb99decd46038b99d20cf330p0na@1540036465157.rtn-svc-na-back-m4l1d-78e20c1a.us-east-1.amazon.com>
+Date: Sat, 20 Oct 2018 11:54:25 +0000
+X-Ses-Outgoing: 2018.10.20-54.240.13.17
+Feedback-Id: 1.us-east-1.00000000+x+i9lRHKog4RW3tECwWIf1xzTYCZyUaiec=:AmazonSES
+MIME-Version: 1.0
+Content-Disposition: inline
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/plain; charset="UTF-8"
+
+Hello Jose,,
+
+Thank you for shopping with us. All Kindle content, including books and Kin=
+dle active content, that you've purchased from the Kindle Store is stored i=
+n your Kindle library https://www.amazon.com/gp/digital/fiona/manage/ref=3D=
+00000000#All
+
+
+...........................................................................=
+.
+
+Order Information:
+
+E-mail Address:
+        abcde@abcdef.com
+
+Order Grand Total:
+        $0.00
+...........................................................................=
+.
+
+Order Summary:
+
+Details:
+
+Order #: 000-0000000-0000000
+
+Item Subtotal:                                  $0.00
+Tax Collected:                                  $0.00
+                                              ........................
+Grand Total:                                    $9.99
+...........................................................................=
+.
+
+A book of incredible insight that is widely regarded
+Kindle Edition
+Sold by Foobarbaz
+
+...........................................................................=
+.
+
+You can view your receipt or invoice by visiting the Order details page:
+
+https://www.amazon.com/gp/digital/your-account/order-summary.html/ref=0000_=
+0000?orderID=00000-0000000-0000000
+
+The charge for this order will appear on your credit card statement from
+the merchant 'AMZN Payment Services'.
+
+You can review your orders in Your Account.
+
+If you've explored the links on that page but still have a question, please
+visit our online Help Department:
+
+https://www.amazon.com/gp/help/customer/display.html/ref=0000_00_00?ie=3DUT=
+F8&nodeId=00000000
+...........................................................................=
+.
+
+Please note: This e-mail was sent from a notification-only address that
+cannot accept incoming e-mail. Please do not reply to this message.
+
+Thanks again for shopping with us.
+
+---------------------------------------------------------------------------=
+-
+Amazon.com
+
+Earth's Biggest Selection
+Find, Discover, and Buy Virtually Anything
+https://amazon.com
+---------------------------------------------------------------------------=
+-

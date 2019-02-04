@@ -1,0 +1,22 @@
+From: joe@spilled.ink
+To: crawshaw@spilled.ink
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b2"
+
+--b2
+Content-Type: text/plain; charset="utf-8"
+
+Plain text.
+--b2
+Content-Type: text/html; charset="utf-8"
+
+<b>Rich</b> text.
+--b2
+Content-Type: text/rich; charset="utf-8"
+
+*Rich* text. Will get compressed.
+*Rich* text. Will get compressed.
+*Rich* text. Will get compressed.
+*Rich* text. Will get compressed.
+--b2--
+

@@ -1,0 +1,14 @@
+To: david@zentus.com
+Subject: Hello
+From: joe@spilled.ink
+Date: Fri, 13 Jul 2018 16:39:01 -0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Hello,
+
+This is a very long line that is broken using the venerable quoted-printabl=
+e encoding format. By being over 120 characters when it is re-encoded b=
+y the msgbuilder package it will be encoded as quoted-printable.
+
