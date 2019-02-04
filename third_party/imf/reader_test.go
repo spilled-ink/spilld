@@ -134,7 +134,7 @@ func TestReadMIMEHeaderNonCompliant(t *testing.T) {
 		"Foo", "bar",
 		"Content-Language", "en",
 		"Sid", "0",
-		"Audio Mode", "None",
+		"Audio mode", "None",
 		"Privilege", "127",
 	)
 	if !reflect.DeepEqual(m, want) || err != nil {
