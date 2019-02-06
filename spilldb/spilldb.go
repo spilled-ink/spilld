@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"crawshaw.io/iox"
 	"crawshaw.io/iox/webfetch"
@@ -231,12 +230,10 @@ func (s *Server) addShutdownFn(fn func(context.Context) error) {
 	s.shutdownFnsMu.Unlock()
 }
 
-func (s *Server) Shutdown() error {
+func (s *Server) Shutdown(ctx context.Context) error {
 	s.Logf("spilldb: shutdown started")
 
 	shutdownDone := make(chan struct{}, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
 	go func() {
 		select {
 		case <-shutdownDone:
