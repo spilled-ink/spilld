@@ -1284,8 +1284,8 @@ func TestLiteralContinuationFunc(t *testing.T) {
 
 	cont := make(chan string)
 	contFn := func(msg string, len uint32) {
-		if !strings.HasPrefix(msg, "+") {
-			t.Errorf("continuation message %q missing '+' prefix", msg)
+		if !strings.HasPrefix(msg, "+ ") {
+			t.Errorf(`continuation message %q missing "+ " prefix`, msg)
 		}
 		if !strings.HasSuffix(msg, "\r\n") {
 			t.Errorf("continuation message %q missing CRLF", msg)
@@ -1362,8 +1362,8 @@ func TestAuthPlainContinuation(t *testing.T) {
 
 	cont := make(chan string)
 	contFn := func(msg string, len uint32) {
-		if !strings.HasPrefix(msg, "+") {
-			t.Errorf("continuation message %q missing '+' prefix", msg)
+		if !strings.HasPrefix(msg, "+ ") {
+			t.Errorf(`continuation message %q missing "+ " prefix`, msg)
 		}
 		if !strings.HasSuffix(msg, "\r\n") {
 			t.Errorf("continuation message %q missing CRLF", msg)

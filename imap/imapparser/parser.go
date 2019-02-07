@@ -229,7 +229,7 @@ func (p *Parser) ParseCommand() (err error) {
 			return p.error("AUTHENTICATE has trailing argument")
 		}
 		if p.Scanner.ContFn != nil {
-			p.Scanner.ContFn("+\r\n", 0)
+			p.Scanner.ContFn("+ \r\n", 0)
 		}
 
 		// As documented in RFC 2595 Section 6. PLAIN SASL mechanism.
