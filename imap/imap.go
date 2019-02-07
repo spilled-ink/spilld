@@ -81,8 +81,8 @@ type MailboxInfo struct {
 	NumMessages        uint32
 	NumRecent          uint32
 	NumUnseen          uint32
-	UIDNext            uint32
-	UIDValidity        uint32
+	UIDNext            uint32 // must be greater than zero
+	UIDValidity        uint32 // must be greater than zero
 	FirstUnseenSeqNum  uint32
 	HighestModSequence int64
 }

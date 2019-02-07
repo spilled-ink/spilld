@@ -80,7 +80,13 @@ func TestSelect(t *testing.T, server *TestServer) {
 	s.readExpectPrefix(`* OK [PERMANENTFLAGS (`)
 	s.readExpectPrefix(`* OK [HIGHESTMODSEQ`)
 	s.readExpectPrefix(`* OK [UNSEEN 1]`)
-	s.readExpectPrefix(`* OK [UIDVALIDITY`)
+	got := s.read()
+	var uidValidity int64
+	if _, err := fmt.Sscanf(got, "* OK [UIDVALIDITY %d]", &uidValidity); err != nil {
+		t.Errorf("could not parse UIDVALIDITY: %v", err)
+	} else if uidValidity < 1 {
+		t.Error("UIDVALIDITY must be positive integer, got %d", uidValidity)
+	}
 	s.readExpectPrefix(`* OK [UIDNEXT 6]`)
 	s.readExpectPrefix(`01 OK [READ-WRITE]`)
 }
