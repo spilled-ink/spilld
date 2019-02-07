@@ -390,7 +390,7 @@ func TestAuth(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if msg != "VXNlcm5hbWU6AA==" {
+		if msg != "VXNlcm5hbWU6" {
 			t.Errorf("unexpected message, want base64 for 'Username' got %q", msg)
 		}
 
@@ -398,14 +398,8 @@ func TestAuth(t *testing.T) {
 		c.Text.Writer.W.Flush()
 		if _, msg, err := c.Text.ReadCodeLine(334); err != nil {
 			t.Fatal(err)
-		} else {
-			passMsg, err := base64.StdEncoding.DecodeString(msg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(passMsg) == 0 || passMsg[len(passMsg)-1] != '\x00' {
-				t.Error("macOS Mail requires encoded 'Password:' message be NUL terminated")
-			}
+		} else if msg != "UGFzc3dvcmQ6" {
+			t.Errorf("unexpected message, want base64 for 'Password' got %q", msg)
 		}
 
 		fmt.Fprintf(c.Text.Writer.W, "%s\r\n", base64.StdEncoding.EncodeToString([]byte("secret")))

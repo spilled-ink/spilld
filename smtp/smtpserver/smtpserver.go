@@ -411,7 +411,12 @@ func (s *session) serveCmd(verb string, arg []byte, res io.Writer) moreSession {
 		case strings.HasPrefix(string(arg), "PLAIN"):
 			identity, user, pass = s.serveAuthPlain(arg, res)
 		case string(arg) == "LOGIN":
-			user, pass = s.serveAuthLogin(res)
+			var err error
+			user, pass, err = s.serveAuthLogin(res)
+			if err != nil {
+				fmt.Fprintf(res, "500 5.5.1 Invalid command: %v\r\n", err)
+				return sessionContinue
+			}
 		default:
 			fmt.Fprintf(res, "504 Unrecognized authentication type.\r\n")
 			return sessionContinue
@@ -419,7 +424,7 @@ func (s *session) serveCmd(verb string, arg []byte, res io.Writer) moreSession {
 
 		s.authToken = s.server.Auth(identity, user, pass, s.remoteAddr)
 		if s.authToken == 0 {
-			fmt.Fprintf(res, "535 5.7.1 authentication failed\r\n")
+			fmt.Fprintf(res, "535 5.7.0 Incorrect username or password.\r\n")
 			return sessionContinue
 		}
 		fmt.Fprintf(res, "235 Authentication successful.\r\n")
@@ -568,14 +573,17 @@ func (s *session) serveCmd(verb string, arg []byte, res io.Writer) moreSession {
 }
 
 func (s *session) serveAuthPlain(arg []byte, res io.Writer) (identity, user, pass []byte) {
-	arg = arg[len("PLAIN "):]
+	arg = arg[len("PLAIN"):]
+	if len(arg) > 0 && arg[0] == ' ' {
+		arg = arg[1:]
+	}
 	if len(arg) == 0 {
 		io.WriteString(s.bw, "334 \r\n")
 		s.bw.Flush()
 		var err error
 		arg, err = s.br.ReadSlice('\n')
 		if err != nil {
-			s.log("AUTH argument read error", logs{"err": err.Error()})
+			s.log("AUTH PLAIN argument read error", logs{"err": err.Error()})
 			return nil, nil, nil
 		}
 		if len(arg) < 3 || arg[len(arg)-2] != '\r' || arg[len(arg)-1] != '\n' {
@@ -607,56 +615,53 @@ func (s *session) serveAuthPlain(arg []byte, res io.Writer) (identity, user, pas
 	return identity, user, pass
 }
 
-func (s *session) serveAuthLogin(res io.Writer) (user, pass []byte) {
+func (s *session) serveAuthLogin(res io.Writer) (user, pass []byte, err error) {
 	// We do not advertise support for this, but we support
 	// it in the hopes it will help our honeypot.
-	io.WriteString(s.bw, "334 VXNlcm5hbWU6AA==\r\n") // base64 "Username:\x00"
+	io.WriteString(s.bw, "334 VXNlcm5hbWU6\r\n") // base64 "Username:"
 	s.bw.Flush()
 	arg, err := s.br.ReadSlice('\n')
 	if err != nil {
-		s.log("AUTH argument read error", logs{"err": err.Error()})
-		return nil, nil
+		s.log("AUTH LOGIN user read error", logs{"err": err.Error()})
+		return nil, nil, fmt.Errorf("AUTH LOGIN user read error")
 	}
 	if len(arg) < 2 || arg[len(arg)-2] != '\r' || arg[len(arg)-1] != '\n' {
-		fmt.Fprint(res, "535 bad AUTH arg does not end in CRLF\r\n")
-		return nil, nil
+		return nil, nil, fmt.Errorf("AUTH LOGIN user missing CRLF")
 	}
+	s.log("AUTH LOGIN got user base64", logs{"raw_arg": string(arg)})
 	arg = bytes.TrimSpace(arg)
 
 	user = make([]byte, base64.StdEncoding.DecodedLen(len(arg)))
 	if n, err := base64.StdEncoding.Decode(user, arg); err != nil {
-		s.log("LOGIN bad user base64", logs{"arg": arg})
-		fmt.Fprintf(res, "535 bad LOGIN user base64 encoding\r\n")
-		return nil, nil
+		s.log("AUTH LOGIN bad user base64", logs{"arg": arg})
+		return nil, nil, fmt.Errorf("AUTH LOGIN bad user base64")
 	} else {
 		user = user[:n]
 	}
 
-	// Note that some clients, such as macOS Mail.app, require the \x00.
-	io.WriteString(s.bw, "334 UGFzc3dvcmQ6AA==\r\n") // base64 "Password:\x00"
+	io.WriteString(s.bw, "334 UGFzc3dvcmQ6\r\n") // base64 "Password:"
 	s.bw.Flush()
 	arg, err = s.br.ReadSlice('\n')
 	if err != nil {
-		s.log("AUTH argument read error", logs{"err": err.Error()})
-		return nil, nil
+		s.log("AUTH LOGIN pass read error", logs{"err": err.Error()})
+		return nil, nil, fmt.Errorf("AUTH LOGIN password read error")
 	}
 	if len(arg) < 2 || arg[len(arg)-2] != '\r' || arg[len(arg)-1] != '\n' {
-		fmt.Fprint(res, "535 bad AUTH arg does not end in CRLF\r\n")
-		return nil, nil
+		return nil, nil, fmt.Errorf("AUTH LOGIN password missing CRLF")
 	}
+	s.log("AUTH LOGIN got pass base64", logs{"raw_arg": string(arg)})
 	arg = bytes.TrimSpace(arg)
 
 	pass = make([]byte, base64.StdEncoding.DecodedLen(len(arg)))
 	if n, err := base64.StdEncoding.Decode(pass, arg); err != nil {
 		// Safe to log. If it's invalid base64 it's not a pssword.
-		s.log("LOGIN bad pass base64", logs{"arg": arg})
-		fmt.Fprintf(res, "535 bad LOGIN pass base64 encoding\r\n")
-		return nil, nil
+		s.log("AUTH LOGIN bad pass base64", logs{"arg": string(arg)})
+		return nil, nil, fmt.Errorf("AUTH LOGIN bad password base64")
 	} else {
 		pass = pass[:n]
 	}
 
-	return user, pass
+	return user, pass, nil
 }
 
 func (s *session) hasNoArg(arg []byte, res io.Writer) bool {
