@@ -209,14 +209,16 @@ func (s *memorySession) CreateMailbox(n []byte, attrs imap.ListAttrFlag) error {
 		return errors.New("memory session: mailbox exists")
 	}
 	s.user.mailboxes[name] = &memoryMailbox{
-		server:    s.server,
-		user:      s.user,
-		name:      name,
-		attrs:     attrs,
-		uidnext:   1,
-		mailboxID: s.user.nextMailboxID,
+		server:      s.server,
+		user:        s.user,
+		name:        name,
+		attrs:       attrs,
+		uidnext:     1,
+		uidValidity: s.user.uidValidityNext,
+		mailboxID:   s.user.nextMailboxID,
 	}
 	s.user.nextMailboxID++
+	s.user.uidValidityNext++
 	return nil
 }
 
