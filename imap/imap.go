@@ -1,19 +1,19 @@
 // Package imap defines the core types used by the IMAP server.
 //
 // TODO document
-// TODO remove iox dependency
 // TODO remove imapparser dependency?
 package imap
 
 import (
+	"io"
 	"sort"
 	"time"
 
-	"crawshaw.io/iox"
 	"spilled.ink/email"
 	"spilled.ink/imap/imapparser"
 )
 
+// Session is an authenticated user session to the IMAP server.
 type Session interface {
 	Mailboxes() ([]MailboxSummary, error)
 	Mailbox(name []byte) (Mailbox, error)
@@ -24,13 +24,16 @@ type Session interface {
 	Close()
 }
 
+// Mailbox is an open user mailbox in a session.
 type Mailbox interface {
+	// ID is an immutable positive number.
+	// If the name of the Mailbox is changed, the ID remains unchanged.
 	ID() int64
 
 	Info() (MailboxInfo, error)
 
-	// TODO: switch to io.ReadSeeker
-	Append(flags [][]byte, date time.Time, data *iox.BufferFile) (uid uint32, err error)
+	// Append appends a message to the mailbox.
+	Append(flags [][]byte, date time.Time, data io.ReadSeeker) (uid uint32, err error)
 
 	// Search finds all messages that match op and calls fn for each one.
 	Search(op *imapparser.SearchOp, fn func(MessageSummary)) error
@@ -61,8 +64,14 @@ type Mailbox interface {
 
 	Store(uid bool, seqs []imapparser.SeqRange, store *imapparser.Store) (StoreResults, error)
 
+	// Move moves messages from this mailbox to dst.
+	//
+	// Each message moved is reported by calling fn.
 	Move(uid bool, seqs []imapparser.SeqRange, dst Mailbox, fn func(seqNum, srcUID, dstUID uint32)) error
 
+	// Copies moves messages from this mailbox to dst.
+	//
+	// Each message copied is reported by calling fn.
 	Copy(uid bool, seqs []imapparser.SeqRange, dst Mailbox, fn func(srcUID, dstUID uint32)) error
 
 	HighestModSequence() (int64, error) // TODO: just use Info?

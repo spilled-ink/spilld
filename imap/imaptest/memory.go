@@ -320,7 +320,7 @@ func (m *memoryMailbox) Info() (imap.MailboxInfo, error) {
 	return info, nil
 }
 
-func (m *memoryMailbox) Append(flags [][]byte, date time.Time, data *iox.BufferFile) (uint32, error) {
+func (m *memoryMailbox) Append(flags [][]byte, date time.Time, data io.ReadSeeker) (uint32, error) {
 	msg := memoryMsg{}
 
 	m.user.mu.Lock()

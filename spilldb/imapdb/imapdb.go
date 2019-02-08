@@ -391,7 +391,7 @@ func (m *mailbox) Info() (info imap.MailboxInfo, err error) {
 	return info, nil
 }
 
-func (m *mailbox) Append(flags [][]byte, date time.Time, data *iox.BufferFile) (uid uint32, err error) {
+func (m *mailbox) Append(flags [][]byte, date time.Time, data io.ReadSeeker) (uid uint32, err error) {
 	var msg *email.Msg
 	msg, err = msgcleaver.Cleave(m.s.filer, data)
 	if err != nil {
