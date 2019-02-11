@@ -481,12 +481,10 @@ func (s *Scanner) numeric(c rune) {
 	s.source.PeekRunes(p[:])
 	if isIdent(p[0], p[1], p[2]) {
 		s.Token = Dimension
-		lit := s.Literal
-		s.Literal = s.Literal[len(s.Literal):]
-		s.name()
+		numberEnd := len(s.Literal)
+		s.name()              // read the dimension identifier onto the end of the literal
 		s.Value = s.Value[:0] // don't record unit name as value
-		s.Unit = s.Literal
-		s.Literal = lit[:len(lit)+len(s.Literal)]
+		s.Unit = s.Literal[numberEnd:]
 	} else if p[0] == '%' {
 		s.Token = Percentage
 		s.Literal = append(s.Literal, '%')

@@ -243,6 +243,22 @@ bar"`,
 			{pos: pos{3, 1}, tok: EOF},
 		},
 	},
+	{
+		name:  "long ident",
+		input: `font-size: 2an-extraordinarily-long-dimension-name-probably-the-spec-author-is-paid-by-the-column-inch-like-dickens;`,
+		want: []token{
+			{tok: Ident, lit: "font-size", val: "font-size"},
+			{tok: Colon},
+			{
+				tok:  Dimension,
+				sub:  TypeFlagInteger,
+				lit:  `2an-extraordinarily-long-dimension-name-probably-the-spec-author-is-paid-by-the-column-inch-like-dickens`,
+				unit: `an-extraordinarily-long-dimension-name-probably-the-spec-author-is-paid-by-the-column-inch-like-dickens`,
+			},
+			{tok: Semicolon},
+			{tok: EOF},
+		},
+	},
 }
 
 func testScanner(t *testing.T, oneByteReader bool) {
@@ -338,5 +354,22 @@ func TestScannerFiles(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFuzzCrashRegressions(t *testing.T) {
+	tests := []string{
+		"0\x00\x00\x00\x00\x00\x00\x000\x00\x00\x00\x00\x00\x00\x000\x00\x00\x00" +
+			"\x00\x00\x00\x000\x00\x00\x00\x00\x00\x00\x000\x00\x00\x00\x00\x00\x00\x00" +
+			"0\x00\x00\x00\x00\x00\x00",
+	}
+	for _, test := range tests {
+		s := NewScanner(strings.NewReader(test), func(line, col, n int, msg string) {})
+		for {
+			s.Next()
+			if s.Token == EOF {
+				break
+			}
+		}
 	}
 }
