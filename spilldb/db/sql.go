@@ -5,7 +5,8 @@ PRAGMA auto_vacuum = INCREMENTAL;
 
 -- ServerConfig is a one-row table containing global spilld configuration.
 CREATE TABLE IF NOT EXISTS ServerConfig (
-	NexusID INTEGER
+	NexusToken TEXT
+	-- TODO: consider replicating flags here and using github.com/peterbourgon/ff
 );
 
 CREATE TABLE IF NOT EXISTS Users (
