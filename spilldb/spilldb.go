@@ -169,13 +169,6 @@ func (s *Server) Serve(smtp, msa, imap []ServerAddr) error {
 		s.Logf("spilldb: incoming message processor shutdown")
 	}()
 
-	/*type ServerAddr struct {
-		Hostname  string
-		Ln        net.Listener
-		TLSConfig *tls.Config
-	}*/
-	// Serve(smtp, msa, imap []ServerAddr, https, httpDebug *ServerAddr) error
-
 	for _, addr := range smtp {
 		addr := addr
 		wg.Add(1)
