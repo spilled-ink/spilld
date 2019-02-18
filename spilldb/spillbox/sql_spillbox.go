@@ -3,14 +3,8 @@ package spillbox
 const createSQL = `
 -- SQL schema for a spilldb single user mailbox, a.k.a. a spillbox.
 --
--- Contains a complete copy of a user email archive,
+-- Contains the metadata for a user email archive,
 -- including any active draft messages.
---
--- Synced to the cloud and then synced down other devices.
--- Some tables have special handling and are not synced,
--- those are documented in comments below.
-
-PRAGMA journal_mode=WAL;
 
 -- For IMAP XAPPLEPUSHSERVICE.
 CREATE TABLE IF NOT EXISTS ApplePushDevices (
@@ -147,25 +141,18 @@ CREATE TABLE IF NOT EXISTS MsgAddresses (
 	FOREIGN KEY(AddressID) REFERENCES Addresses(AddressID)
 );
 
--- TODO: move this to its own database.
-CREATE TABLE IF NOT EXISTS MsgPartContents (
-	BlobID  INTEGER PRIMARY KEY,
-	Content BLOB
-);
-
 -- MsgParts contains the mime components
 CREATE TABLE IF NOT EXISTS MsgParts (
-	MsgID         INTEGER NOT NULL,
-	PartNum       INTEGER NOT NULL,
-	Name          TEXT NOT NULL,
-	IsBody        BOOLEAN NOT NULL, -- text or html body of the email
-	IsAttachment  BOOLEAN NOT NULL,
-	-- TODO IsSent        BOOLEAN NOT NULL, -- has part been uploaded to server
-	IsCompressed  BOOLEAN, -- content is gzip compressed
+	MsgID          INTEGER NOT NULL,
+	PartNum        INTEGER NOT NULL,
+	Name           TEXT NOT NULL,
+	IsBody         BOOLEAN NOT NULL, -- text or html body of the email
+	IsAttachment   BOOLEAN NOT NULL,
+	IsCompressed   BOOLEAN, -- content is gzip compressed
 	CompressedSize INTEGER,
-	ContentType   TEXT,
-	ContentID     TEXT, -- mime header Content-ID
-	BlobID        INTEGER,
+	ContentType    TEXT,
+	ContentID      TEXT,    -- mime header Content-ID
+	BlobID         INTEGER, -- Blobs table key in the blobs database
 
 	Path                    TEXT, -- MIME part path as used in IMAP
 	ContentTransferEncoding TEXT,
@@ -173,8 +160,7 @@ CREATE TABLE IF NOT EXISTS MsgParts (
 	ContentTransferLines    INTEGER,
 
 	PRIMARY KEY(MsgID, PartNum),
-	FOREIGN KEY(MsgID) REFERENCES Msgs(MsgID),
-	FOREIGN KEY(BlobID) REFERENCES MsgPartContents(BlobID)
+	FOREIGN KEY(MsgID) REFERENCES Msgs(MsgID)
 );
 
 -- TODO: move this to its own database
@@ -202,4 +188,9 @@ BEGIN
 		SET UIDValidity = (SELECT max(UIDValidity) FROM Mailboxes) + 1
 		WHERE MailboxID = new.MailboxID;
 END;
+
+CREATE TABLE IF NOT EXISTS blobs.Blobs (
+	BlobID  INTEGER PRIMARY KEY,
+	Content BLOB
+);
 `

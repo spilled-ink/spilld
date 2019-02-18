@@ -146,7 +146,7 @@ func (c *Box) insertMsg(conn *sqlite.Conn, msg *email.Msg, stagingID int64) (don
 		}
 	}
 
-	stmt := conn.Prep("SELECT count(*) FROM MsgPartContents WHERE Content IS NULL AND BlobID IN (SELECT BlobID FROM MsgParts WHERE MsgID = $MsgID);")
+	stmt := conn.Prep("SELECT count(*) FROM blobs.Blobs WHERE Content IS NULL AND BlobID IN (SELECT BlobID FROM MsgParts WHERE MsgID = $MsgID);")
 	stmt.SetInt64("$MsgID", int64(msg.MsgID))
 	if count, err := sqlitex.ResultInt(stmt); err != nil {
 		return false, err
@@ -214,7 +214,7 @@ func InsertPartSummary(conn *sqlite.Conn, msgID email.MsgID, part *email.Part) e
 
 func insertPart(conn *sqlite.Conn, msgID email.MsgID, part *email.Part) (err error) {
 	if part.BlobID == 0 {
-		stmt := conn.Prep(`INSERT INTO MsgPartContents (BlobID, Content) VALUES ($BlobID, $Content);`)
+		stmt := conn.Prep(`INSERT INTO blobs.Blobs (BlobID, Content) VALUES ($BlobID, $Content);`)
 		if part.Content == nil {
 			stmt.SetNull("$Content")
 		} else {
@@ -235,7 +235,7 @@ func insertPart(conn *sqlite.Conn, msgID email.MsgID, part *email.Part) (err err
 		if part.Content == nil {
 			return nil
 		}
-		stmt := conn.Prep("UPDATE MsgPartContents SET Content = $Content WHERE BlobID = $BlobID;")
+		stmt := conn.Prep("UPDATE blobs.Blobs SET Content = $Content WHERE BlobID = $BlobID;")
 		stmt.SetInt64("$BlobID", part.BlobID)
 		sz := part.Content.Size()
 		if part.IsCompressed {
@@ -253,7 +253,7 @@ func insertPart(conn *sqlite.Conn, msgID email.MsgID, part *email.Part) (err err
 	part.Content.Seek(0, 0)
 	defer part.Content.Seek(0, 0)
 
-	blob, err := conn.OpenBlob("", "MsgPartContents", "Content", part.BlobID, true)
+	blob, err := conn.OpenBlob("blobs", "Blobs", "Content", part.BlobID, true)
 	if err != nil {
 		return err
 	}

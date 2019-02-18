@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -198,32 +199,36 @@ func New(userID int64, filer *iox.Filer, dbfile string, poolSize int) (_ *Box, e
 		}
 	}()
 
+	dbdir, dbfilename := filepath.Split(dbfile)
+	blobsDBFile := filepath.Join(dbdir, strings.TrimSuffix(dbfilename, ".db")+"_blobs.db")
+
 	flags := sqlite.SQLITE_OPEN_SHAREDCACHE |
 		sqlite.SQLITE_OPEN_WAL |
 		sqlite.SQLITE_OPEN_URI |
 		sqlite.SQLITE_OPEN_NOMUTEX
 	flagsRW := flags | sqlite.SQLITE_OPEN_READWRITE | sqlite.SQLITE_OPEN_CREATE
 
-	conn, err := sqlite.OpenConn(dbfile, flagsRW)
-	if err != nil {
-		return nil, err
-	}
-	if err := initDB(conn); err != nil {
-		return nil, fmt.Errorf("spillbox.New: init DB: %v", err)
-	}
-	if err := conn.Close(); err != nil {
-		return nil, err
-	}
-	conn = nil
-
 	box.PoolRW, err = sqlitex.Open(dbfile, flagsRW, 1)
 	if err != nil {
 		return nil, err
 	}
+	if err := attachBlobsDB(box.PoolRW, 1, blobsDBFile); err != nil {
+		return nil, err
+	}
+	conn := box.PoolRW.Get(nil)
+	err = initDB(conn)
+	box.PoolRW.Put(conn)
+	if err != nil {
+		return nil, fmt.Errorf("spillbox.New: init DB: %v", err)
+	}
+
 	if poolSize > 1 {
 		flagsRO := flags | sqlite.SQLITE_OPEN_READONLY
 		box.PoolRO, err = sqlitex.Open(dbfile, flagsRO, poolSize-1)
 		if err != nil {
+			return nil, err
+		}
+		if err := attachBlobsDB(box.PoolRO, poolSize-1, blobsDBFile); err != nil {
 			return nil, err
 		}
 	} else {
@@ -250,6 +255,36 @@ func New(userID int64, filer *iox.Filer, dbfile string, poolSize int) (_ *Box, e
 	return box, nil
 }
 
+func attachBlobsDB(pool *sqlitex.Pool, poolSize int, blobsDBFile string) error {
+	var conns []*sqlite.Conn
+	defer func() {
+		for _, conn := range conns {
+			pool.Put(conn)
+		}
+	}()
+
+	for i := 0; i < poolSize; i++ {
+		conn := pool.Get(nil)
+		if conn == nil {
+			return fmt.Errorf("spillbox: cannot get connection %d to attach blobs", i)
+		}
+		conns = append(conns, conn)
+
+		stmt, _, err := conn.PrepareTransient("ATTACH DATABASE $db AS blobs;")
+		if err != nil {
+			return err
+		}
+		stmt.SetText("$db", blobsDBFile)
+		_, err = stmt.Step()
+		stmt.Finalize()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (box *Box) RegisterNotifier(notifier imap.Notifier) {
 	box.notifiers = append(box.notifiers, notifier)
 }
@@ -272,6 +307,16 @@ func (box *Box) Close() (err error) {
 }
 
 func initDB(conn *sqlite.Conn) (err error) {
+	stmt, _, err := conn.PrepareTransient("PRAGMA journal_mode=WAL;")
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Step()
+	stmt.Finalize()
+	if err != nil {
+		return err
+	}
+
 	defer sqlitex.Save(conn)(&err)
 	if err := sqlitex.ExecScript(conn, createSQL); err != nil {
 		return err
@@ -617,9 +662,9 @@ func LoadPartsSummary(conn *sqlite.Conn, msgID email.MsgID) (parts []email.Part,
 		ContentType, ContentID, Name, MsgParts.BlobID,
 		ContentTransferEncoding, ContentTransferSize,
 		ContentTransferLines,
-		length(MsgPartContents.Content) AS CompressedSize
+		length(blobs.Blobs.Content) AS CompressedSize
 		FROM MsgParts
-		INNER JOIN MsgPartContents ON MsgPartContents.BlobID = MsgParts.BlobID
+		INNER JOIN blobs.Blobs ON blobs.Blobs.BlobID = MsgParts.BlobID
 		WHERE MsgID = $msgID ORDER BY PartNum;`)
 	stmt.SetInt64("$msgID", int64(msgID))
 
@@ -698,14 +743,14 @@ func LoadPartContent(conn *sqlite.Conn, filer *iox.Filer, part *email.Part) erro
 
 func readMsgPart(conn *sqlite.Conn, filer *iox.Filer, blobID int64, isCompressed bool, contentState ContentState) (_ email.Buffer, compressedSize int64, err error) {
 	if contentState == ContentNil {
-		stmt := conn.Prep("SELECT length(Content) FROM MsgPartContents WHERE BlobID = $BlobID;")
+		stmt := conn.Prep("SELECT length(Content) FROM blobs.Blobs WHERE BlobID = $BlobID;")
 		stmt.SetInt64("$BlobID", blobID)
 		compressedSize, err = sqlitex.ResultInt64(stmt)
 		return nil, compressedSize, err
 	}
 
 	var blob *sqlite.Blob
-	blob, err = conn.OpenBlob("", "MsgPartContents", "Content", blobID, false)
+	blob, err = conn.OpenBlob("blobs", "Blobs", "Content", blobID, false)
 	if err != nil {
 		return nil, 0, err
 	}
