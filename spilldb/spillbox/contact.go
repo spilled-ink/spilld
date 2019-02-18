@@ -1,8 +1,6 @@
 package spillbox
 
 import (
-	"math/rand"
-
 	"crawshaw.io/sqlite"
 	"spilled.ink/email"
 )
@@ -90,18 +88,6 @@ func ResolveAddressID(conn *sqlite.Conn, addr *email.Address, visible bool) (add
 				return 0, 0, err
 			}
 			stmt.Reset()
-		}
-
-		fallbackPicID := rand.Int63n(1000)
-
-		stmt = conn.Prep(`INSERT INTO ProfilePics (PicID, AddressID, FetchTime, ContactID, FallbackPicID)
-			VALUES ($picID, $addressID, $fetchTime, $contactID, $fallbackPicID);`)
-		stmt.SetInt64("$addressID", int64(addressID))
-		stmt.SetInt64("$contactID", int64(contactID))
-		stmt.SetInt64("$fetchTime", 0)
-		stmt.SetInt64("$fallbackPicID", fallbackPicID)
-		if _, err := InsertRandIDMin(stmt, "$picID", 1001); err != nil {
-			return 0, 0, err
 		}
 	}
 

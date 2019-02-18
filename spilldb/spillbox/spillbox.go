@@ -455,15 +455,16 @@ var (
 	noreplyDomainRE = regexp.MustCompile(`(?i)@.*noreply`)
 )
 
-func (box *Box) updateSearch(ctx context.Context) error {
+/*func (box *Box) updateSearch(ctx context.Context) error {
 	conn := box.PoolRW.Get(ctx)
 	if conn == nil {
 		return context.Canceled
 	}
 	defer box.PoolRW.Put(conn)
 
+	// TODO: fill in the body from a blob
 	stmt := conn.Prep(`INSERT INTO MsgSearch (MsgID, ConvoID, Body)
-		SELECT MsgID, ConvoID, PlainText as Body FROM Msgs
+		SELECT MsgID, ConvoID, "" as Body FROM Msgs
 		WHERE MsgID IN (
 			SELECT MsgID FROM Msgs EXCEPT SELECT MsgID FROM MsgSearch
 		);`)
@@ -472,7 +473,7 @@ func (box *Box) updateSearch(ctx context.Context) error {
 	}
 
 	return nil
-}
+}*/
 
 func findLabel(conn *sqlite.Conn, labelName string) (LabelID, error) {
 	stmt := conn.Prep("SELECT LabelID from Labels WHERE Label = $labelName;")
@@ -507,54 +508,9 @@ func LoadMsgHdrs(conn *sqlite.Conn, msgID email.MsgID) (*email.Header, error) {
 	return nil
 }*/
 
-func FindProfilePicID(conn *sqlite.Conn, contactID ContactID) (int64, error) {
-	var picsByAddr []struct {
-		picID         int64
-		fallbackPicID int64
-	}
-
-	stmt := conn.Prep(`SELECT PicID, FallbackPicID, length(Content) AS Len FROM ProfilePics
-		INNER JOIN Addresses ON ProfilePics.AddressID = Addresses.AddressID
-		WHERE Addresses.ContactID = $contactID AND DefaultAddr = TRUE
-		ORDER BY FetchTime DESC;`)
-	stmt.SetInt64("$contactID", int64(contactID))
-	for {
-		if hasNext, err := stmt.Step(); err != nil {
-			return 0, err
-		} else if !hasNext {
-			break
-		}
-		var p struct {
-			picID         int64
-			fallbackPicID int64
-		}
-		p.fallbackPicID = stmt.GetInt64("FallbackPicID")
-		if stmt.GetInt64("Len") > 0 {
-			p.picID = stmt.GetInt64("PicID")
-		}
-		picsByAddr = append(picsByAddr, p)
-	}
-	stmt.Reset()
-
-	for _, p := range picsByAddr {
-		if p.picID != 0 {
-			return p.picID, nil
-		}
-	}
-
-	for _, p := range picsByAddr {
-		if p.fallbackPicID != 0 {
-			return p.fallbackPicID, nil
-		}
-	}
-
-	return 0, fmt.Errorf("no profile picture")
-}
-
 type Contact struct {
 	ContactID ContactID
 	Name      string
-	PicID     int64
 }
 
 type ConvoSummary struct {

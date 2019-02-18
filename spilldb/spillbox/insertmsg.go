@@ -416,14 +416,9 @@ func newConvo(conn *sqlite.Conn, msgID email.MsgID) (convoID ConvoID, err error)
 			name = strings.ToLower(stmt.GetText("Address"))
 		}
 		contactID := ContactID(stmt.GetInt64("ContactID"))
-		picID, err := FindProfilePicID(conn, contactID)
-		if err != nil {
-			return 0, err
-		}
 		summary.Contacts = append(summary.Contacts, Contact{
 			ContactID: contactID,
 			Name:      name,
-			PicID:     picID,
 		})
 	}
 	// TODO ? sort.Slice(summary.Contacts, func(i, j int) bool {})

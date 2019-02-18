@@ -41,24 +41,6 @@ CREATE TABLE IF NOT EXISTS Addresses (
 	FOREIGN KEY(ContactID) REFERENCES Contacts(ContactID)
 );
 
-CREATE TABLE IF NOT EXISTS ProfilePics (
-	-- The first 1000 PicIDs are reserved for fallback pics.
-	PicID         INTEGER PRIMARY KEY,
-	AddressID     INTEGER NOT NULL,
-	FetchTime     INTEGER NOT NULL, -- 0 means a fetch is pending
-	ContactID     INTEGER NOT NULL, -- TODO remove
-
-	-- For a typical profile pic either Content or FallbackPicID is set.
-	-- A FallbackPicID is always less than 1000.
-	-- For a PicID <= 1000, both are NULL.
-	FallbackPicID INTEGER,
-	Content       BLOB,
-
-	UNIQUE (AddressID, FetchTime),
-	FOREIGN KEY(AddressID) REFERENCES Addresses(AddressID),
-	FOREIGN KEY(ContactID) REFERENCES Contacts(ContactID)
-);
-
 -- Tie the mod-sequence used by CONDSTORE to the mailbox name.
 --
 -- MailboxID is not visible to IMAP, so reusing a deleted
