@@ -129,8 +129,6 @@ CREATE TABLE IF NOT EXISTS Msgs (
 	-- TODO: what are we going to do with these fields?
 	HdrSubject    TEXT, -- TODO: stop seperating from HdrsAll?
 	HdrsAll       TEXT, -- processed so newlines are always '\n'
-	PlainText     TEXT, -- capped at 128KB
-	HTML          TEXT, -- sanitized, capped at 128KB
 
 	HasUnsubscribe INTEGER, -- HTML contains "<a>.*[Uu]nsubscribe</a>""
 
@@ -179,15 +177,16 @@ CREATE TABLE IF NOT EXISTS MsgParts (
 	FOREIGN KEY(BlobID) REFERENCES MsgPartContents(BlobID)
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS MsgSearch USING fts5(
-	MsgID    UNINDEXED,
-	ConvoID  UNINDEXED,
-	Labels,             -- tokens are "l%x", LabelID.String
-	Name,
-	Subject,
-	Body
-	-- TODO prefix "2 3" ?
-);
+-- TODO: move this to its own database
+-- CREATE VIRTUAL TABLE IF NOT EXISTS MsgSearch USING fts5(
+-- 	MsgID    UNINDEXED,
+-- 	ConvoID  UNINDEXED,
+-- 	Labels,             -- tokens are "l%x", LabelID.String
+-- 	Name,
+-- 	Subject,
+-- 	Body
+-- 	-- TODO prefix "2 3" ?
+-- );
 
 -- TODO remove
 INSERT OR IGNORE INTO Contacts (ContactID, Hidden, Robot) VALUES (1, FALSE, FALSE);
