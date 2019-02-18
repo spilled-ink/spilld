@@ -8,7 +8,7 @@ import (
 
 	"crawshaw.io/iox"
 	"spilled.ink/imap/imapserver"
-	"spilled.ink/tlstest"
+	"spilled.ink/util/tlstest"
 )
 
 func main() {

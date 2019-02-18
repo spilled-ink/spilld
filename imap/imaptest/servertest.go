@@ -21,7 +21,7 @@ import (
 	"spilled.ink/imap"
 	"spilled.ink/imap/imapparser"
 	"spilled.ink/imap/imapserver"
-	"spilled.ink/tlstest"
+	"spilled.ink/util/tlstest"
 )
 
 type TestFn struct {

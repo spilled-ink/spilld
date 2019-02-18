@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"spilled.ink/tlstest"
+	"spilled.ink/util/tlstest"
 )
 
 func listen(t *testing.T) net.Listener {
