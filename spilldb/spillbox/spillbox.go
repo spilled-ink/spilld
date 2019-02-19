@@ -528,7 +528,7 @@ func findLabel(conn *sqlite.Conn, labelName string) (LabelID, error) {
 }
 
 func LoadMsgHdrs(conn *sqlite.Conn, msgID email.MsgID) (*email.Header, error) {
-	stmt := conn.Prep("SELECT HdrsAll FROM Msgs WHERE MsgID = $msgID;")
+	stmt := conn.Prep("SELECT Content FROM blobs.Blobs WHERE BlobID = (SELECT HdrsBlobID FROM Msgs WHERE MsgID = $msgID);")
 	stmt.SetInt64("$msgID", int64(msgID))
 	hdrs, err := sqlitex.ResultText(stmt)
 	if err != nil {
@@ -599,27 +599,22 @@ const (
 //
 // It is the callers responsibility to close the message.
 func LoadMessage(conn *sqlite.Conn, filer *iox.Filer, msgID email.MsgID, contentState ContentState) (msg *email.Msg, err error) {
+	hdrs, err := LoadMsgHdrs(conn, msgID)
+	if err != nil {
+		return nil, fmt.Errorf("spillbox.LoadMessage(%s): loading headers: %v", msgID, err)
+	}
+
 	msg = new(email.Msg)
 	msg.MsgID = msgID
+	msg.Headers = *hdrs
 	// TODO msg.Seed
 	// TODO msg.RawHash
 	// TODO msg.Date
 	// TODO msg.Flags
 	// TODO msg.EncodedSize
 
-	stmt := conn.Prep("SELECT HdrsAll FROM Msgs WHERE MsgID = $msgID;")
-	stmt.SetInt64("$msgID", int64(msgID))
-	headers, err := sqlitex.ResultText(stmt)
-	if err != nil {
-		return nil, fmt.Errorf("spillbox.LoadMessage(%s): loading headers: %v", msgID, err)
-	}
-	msg.Headers, err = imf.NewReader(bufio.NewReader(strings.NewReader(headers))).ReadMIMEHeader()
-	if err != nil {
-		return nil, fmt.Errorf("spillbox.LoadMessage(%s): reading headers: %v", msgID, err)
-	}
-
 	// TODO: call LoadPartSummary
-	stmt = conn.Prep(`SELECT
+	stmt := conn.Prep(`SELECT
 		PartNum, IsBody, IsAttachment, IsCompressed,
 		ContentType, ContentID, Name, BlobID
 		FROM MsgParts

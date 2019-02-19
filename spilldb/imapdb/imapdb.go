@@ -2,7 +2,6 @@
 package imapdb
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -14,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -29,7 +27,6 @@ import (
 	"spilled.ink/imap/imapserver"
 	"spilled.ink/spilldb/boxmgmt"
 	"spilled.ink/spilldb/spillbox"
-	"spilled.ink/third_party/imf"
 )
 
 func NewBackend(dbpool *sqlitex.Pool, filer *iox.Filer, boxmgmt *boxmgmt.BoxMgmt, logf func(format string, v ...interface{})) imapserver.DataStore {
@@ -444,8 +441,8 @@ func (m *mailbox) Search(op *imapparser.SearchOp, fn func(imap.MessageSummary)) 
 	defer m.s.user.Box.PoolRO.Put(conn)
 
 	// allMsgs is the baseline set of messagse assuming no criteria.
-	const allMsgs = `SELECT row_number() OVER win AS SeqNum, UID,
-		Date, HdrsAll, State, Flags, ModSequence, EncodedSize
+	const allMsgs = `SELECT row_number() OVER win AS SeqNum, MsgID, UID,
+		Date, HdrsBlobID, State, Flags, ModSequence, EncodedSize
 		FROM Msgs
 		WHERE MailboxID = $mailboxID
 		AND State = $msgReady
@@ -465,7 +462,8 @@ func (m *mailbox) Search(op *imapparser.SearchOp, fn func(imap.MessageSummary)) 
 			break
 		}
 
-		if !matcher.Match(&matchMessage{logf: m.s.logf, stmt: stmt}) {
+		mMsg := &matchMessage{logf: m.s.logf, conn: conn, stmt: stmt}
+		if !matcher.Match(mMsg) {
 			continue
 		}
 		fn(imap.MessageSummary{
@@ -479,6 +477,7 @@ func (m *mailbox) Search(op *imapparser.SearchOp, fn func(imap.MessageSummary)) 
 
 type matchMessage struct {
 	logf  func(format string, v ...interface{})
+	conn  *sqlite.Conn
 	stmt  *sqlite.Stmt
 	flags map[string]int // decoded from JSON: {"flag": 1}
 	hdrs  *email.Header
@@ -505,13 +504,13 @@ func (m *matchMessage) Flag(name string) bool {
 
 func (m *matchMessage) Header(name string) string {
 	if m.hdrs == nil {
-		hdrStr := m.stmt.GetText("HdrsAll")
-		hdr, err := imf.NewReader(bufio.NewReader(strings.NewReader(hdrStr))).ReadMIMEHeader()
+		msgID := email.MsgID(m.stmt.GetInt64("MsgID"))
+		var err error
+		m.hdrs, err = spillbox.LoadMsgHdrs(m.conn, msgID)
 		if err != nil {
-			m.logf("search match header decode: %v", err)
+			m.logf("error in search match header decode: %v", err)
 			return ""
 		}
-		m.hdrs = &hdr
 	}
 	return string(m.hdrs.Get(email.CanonicalKey([]byte(name))))
 }
@@ -526,7 +525,7 @@ func (m *mailbox) Fetch(useUID bool, seqs []imapparser.SeqRange, changedSince in
 
 	const withSeqNumSQL = `WITH SeqNumMsgs AS (
 		SELECT row_number() OVER win AS SeqNum,
-		MsgID, Seed, UID, ModSequence, Date, HdrsAll, State, Flags, EncodedSize
+		MsgID, Seed, UID, ModSequence, Date, State, Flags, EncodedSize
 		FROM Msgs
 		WHERE MailboxID = $mailboxID
 		AND State = 1    -- spillbox.MsgReady
@@ -572,8 +571,7 @@ func (m *mailbox) Fetch(useUID bool, seqs []imapparser.SeqRange, changedSince in
 
 func (m *mailbox) fetchMsg(conn *sqlite.Conn, stmt *sqlite.Stmt, fn func(imap.Message)) (err error) {
 	msgID := email.MsgID(stmt.GetInt64("MsgID"))
-
-	hdrs, err := imf.NewReader(bufio.NewReader(stmt.GetReader("HdrsAll"))).ReadMIMEHeader()
+	hdrs, err := spillbox.LoadMsgHdrs(conn, msgID)
 	if err != nil {
 		stmt.Reset()
 		return fmt.Errorf("%v headers: %v", msgID, err)
@@ -586,7 +584,7 @@ func (m *mailbox) fetchMsg(conn *sqlite.Conn, stmt *sqlite.Stmt, fn func(imap.Me
 			MsgID:       msgID,
 			Seed:        stmt.GetInt64("Seed"),
 			Date:        time.Unix(stmt.GetInt64("Date"), 0),
-			Headers:     hdrs,
+			Headers:     *hdrs,
 			EncodedSize: stmt.GetInt64("EncodedSize"),
 		},
 		summary: imap.MessageSummary{
@@ -921,7 +919,7 @@ func (m *mailbox) Copy(useUID bool, seqs []imapparser.SeqRange, dst imap.Mailbox
 
 	const withSeqNumSQL = `WITH SeqNumMsgs AS (
 		SELECT row_number() OVER win AS SeqNum,
-		MsgID, Seed, RawHash, UID, Date, HdrSubject, HdrsAll, State, Flags
+		MsgID, Seed, RawHash, UID, Date, HdrsBlobID, State, Flags
 		FROM Msgs
 		WHERE MailboxID = $mailboxID
 		AND State = 1    -- spillbox.MsgReady
@@ -973,15 +971,14 @@ func (m *mailbox) copyMsg(conn *sqlite.Conn, selStmt *sqlite.Stmt, newModSeq int
 	// TODO: keeping this in sync with spillbox.InsertMsg is a little annoying.
 	// Can we de-duplicate somehow without decoding and re-encoding headers+flags?
 	stmt := conn.Prep(`INSERT INTO Msgs (
-			MsgID, Seed, MailboxID, ModSequence, RawHash, State, HdrSubject, HdrsAll, Date, Flags, UID
+			MsgID, Seed, MailboxID, ModSequence, RawHash, State, HdrsBlobID, Date, Flags, UID
 		) VALUES (
-			$msgID, $seed, $mailboxID, $modSeq, $rawHash, $state, $hdrSubject, $hdrsAll, $date, $flags, $uid
+			$msgID, $seed, $mailboxID, $modSeq, $rawHash, $state, $hdrsBlobID, $date, $flags, $uid
 		);`)
 	stmt.SetText("$rawHash", selStmt.GetText("RawHash"))
 	stmt.SetInt64("$seed", selStmt.GetInt64("Seed"))
 	stmt.SetInt64("$state", int64(spillbox.MsgReady))
-	stmt.SetText("$hdrSubject", selStmt.GetText("HdrSubject"))
-	stmt.SetText("$hdrsAll", selStmt.GetText("HdrsAll"))
+	stmt.SetInt64("$hdrsBlobID", selStmt.GetInt64("HdrsBlobID"))
 	stmt.SetText("$flags", selStmt.GetText("Flags"))
 	stmt.SetInt64("$date", selStmt.GetInt64("Date"))
 	stmt.SetInt64("$mailboxID", dst.mailboxID)

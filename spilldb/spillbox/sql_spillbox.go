@@ -120,9 +120,7 @@ CREATE TABLE IF NOT EXISTS Msgs (
 
 	Expunged INTEGER, -- time message was expunged (time.Now().Unix())
 
-	-- TODO: what are we going to do with these fields?
-	HdrSubject    TEXT, -- TODO: stop seperating from HdrsAll?
-	HdrsAll       TEXT, -- processed so newlines are always '\n'
+	HdrsBlobID INTEGER,
 
 	HasUnsubscribe INTEGER, -- HTML contains "<a>.*[Uu]nsubscribe</a>""
 

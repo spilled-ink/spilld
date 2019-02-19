@@ -1,7 +1,6 @@
 package spillbox
 
 import (
-	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -15,7 +14,6 @@ import (
 	"crawshaw.io/sqlite/sqlitex"
 	"spilled.ink/email"
 	"spilled.ink/imap/imapparser"
-	"spilled.ink/third_party/imf"
 )
 
 // InsertMsg inserts a message into the client database.
@@ -95,16 +93,33 @@ func (c *Box) insertMsg(conn *sqlite.Conn, msg *email.Msg, stagingID int64) (don
 		if _, err := msg.Headers.Encode(hdrBuf); err != nil {
 			return false, err
 		}
+		stmt := conn.Prep(`INSERT INTO Blobs (Content) VALUES ($hdrs);`)
+		stmt.SetZeroBlob("$hdrs", int64(hdrBuf.Len()))
+		if _, err := stmt.Step(); err != nil {
+			return false, err
+		}
+		hdrsBlobID := conn.LastInsertRowID()
+		blob, err := conn.OpenBlob("blobs", "Blobs", "Content", hdrsBlobID, true)
+		if err != nil {
+			return false, err
+		}
+		_, err = blob.Write(hdrBuf.Bytes())
+		if err2 := blob.Close(); err == nil {
+			err = err2
+		}
+		if err != nil {
+			return false, err
+		}
 
 		flagsBuf := new(bytes.Buffer)
 		encodeFlags(flagsBuf, msg.Flags)
 
-		stmt := conn.Prep(`INSERT INTO Msgs (
+		stmt = conn.Prep(`INSERT INTO Msgs (
 				MsgID, StagingID, Seed, RawHash, State,
-				HdrSubject, HdrsAll, Date, Flags, EncodedSize
+				HdrsBlobID, Date, Flags, EncodedSize
 			) VALUES (
 				$msgID, $stagingID, $seed, $rawHash, $state,
-				$hdrSubject, $hdrsAll, $date, $flags, $encodedSize
+				$hdrsBlobID, $date, $flags, $encodedSize
 			);`)
 		stmt.SetText("$rawHash", msg.RawHash)
 		if stagingID != 0 {
@@ -114,8 +129,7 @@ func (c *Box) insertMsg(conn *sqlite.Conn, msg *email.Msg, stagingID int64) (don
 		}
 		stmt.SetInt64("$seed", msg.Seed)
 		stmt.SetInt64("$state", int64(MsgFetching))
-		stmt.SetBytes("$hdrSubject", msg.Headers.Get("Subject"))
-		stmt.SetBytes("$hdrsAll", hdrBuf.Bytes())
+		stmt.SetInt64("$hdrsBlobID", hdrsBlobID)
 		stmt.SetInt64("$date", msg.Date.Unix())
 		stmt.SetBytes("$flags", flagsBuf.Bytes())
 		stmt.SetInt64("$encodedSize", msg.EncodedSize)
@@ -123,7 +137,7 @@ func (c *Box) insertMsg(conn *sqlite.Conn, msg *email.Msg, stagingID int64) (don
 		//stmt.SetText("$parseError", msg.ParseError)
 		msgID := extractMsgID(msg.RawHash)
 		stmt.SetInt64("$msgID", msgID)
-		_, err := stmt.Step()
+		_, err = stmt.Step()
 		if sqlite.ErrCode(err) == sqlite.SQLITE_CONSTRAINT_PRIMARYKEY {
 			msgID, err = InsertRandID(stmt, "$msgID")
 		}
@@ -312,27 +326,24 @@ func (c *Box) setMsgFetched(conn *sqlite.Conn, msgID email.MsgID, provMailboxID 
 }
 
 func assignMailbox(conn *sqlite.Conn, msgID email.MsgID, provMailboxID int64) (mailboxID int64, err error) {
-	stmt := conn.Prep("SELECT HdrsAll, HasUnsubscribe FROM Msgs WHERE MsgID = $msgID;")
-	stmt.SetInt64("$msgID", int64(msgID))
-	if hasNext, err := stmt.Step(); err != nil {
-		return 0, err
-	} else if !hasNext {
-		return 0, fmt.Errorf("cannot assign label to unknown msg %s", msgID)
-	}
-	hdrStr := stmt.GetText("HdrsAll")
-	hasUnsubscribe := stmt.GetInt64("HasUnsubscribe") > 0
-	stmt.Reset()
-
-	hdr, err := imf.NewReader(bufio.NewReader(strings.NewReader(hdrStr))).ReadMIMEHeader()
+	hdr, err := LoadMsgHdrs(conn, msgID)
 	if err != nil {
 		return 0, err
 	}
+
+	stmt := conn.Prep("SELECT HasUnsubscribe FROM Msgs WHERE MsgID = $msgID;")
+	stmt.SetInt64("$msgID", int64(msgID))
+	unsubInt, err := sqlitex.ResultInt(stmt)
+	if err != nil {
+		return 0, err
+	}
+	hasUnsubscribe := unsubInt > 0
 
 	if provMailboxID != 0 {
 		mailboxID = provMailboxID
 	} else {
 		stmt = conn.Prep(`SELECT MailboxID FROM Mailboxes WHERE Name = $name;`)
-		if isSubscription(hdr) || hasUnsubscribe {
+		if isSubscription(*hdr) || hasUnsubscribe {
 			stmt.SetText("$name", "Subscriptions")
 		} else {
 			stmt.SetText("$name", "INBOX")
@@ -460,21 +471,18 @@ func newConvo(conn *sqlite.Conn, msgID email.MsgID) (convoID ConvoID, err error)
 }
 
 func assignLabel(conn *sqlite.Conn, msgID email.MsgID, convoID ConvoID) (err error) {
-	stmt := conn.Prep("SELECT HdrsAll, HasUnsubscribe FROM Msgs WHERE MsgID = $msgID;")
-	stmt.SetInt64("$msgID", int64(msgID))
-	if hasNext, err := stmt.Step(); err != nil {
-		return err
-	} else if !hasNext {
-		return fmt.Errorf("cannot assign label to unknown msg %s", msgID)
-	}
-	hdrStr := stmt.GetText("HdrsAll")
-	hasUnsubscribe := stmt.GetInt64("HasUnsubscribe") > 0
-	stmt.Reset()
-
-	hdr, err := imf.NewReader(bufio.NewReader(strings.NewReader(hdrStr))).ReadMIMEHeader()
+	hdr, err := LoadMsgHdrs(conn, msgID)
 	if err != nil {
 		return err
 	}
+
+	stmt := conn.Prep("SELECT HasUnsubscribe FROM Msgs WHERE MsgID = $msgID;")
+	stmt.SetInt64("$msgID", int64(msgID))
+	unsubInt, err := sqlitex.ResultInt(stmt)
+	if err != nil {
+		return err
+	}
+	hasUnsubscribe := unsubInt > 0
 
 	labelPersonalMail, err := findLabel(conn, "Personal Mail")
 	if err != nil {
@@ -482,7 +490,7 @@ func assignLabel(conn *sqlite.Conn, msgID email.MsgID, convoID ConvoID) (err err
 	}
 	labelID := labelPersonalMail
 
-	isSub := isSubscription(hdr)
+	isSub := isSubscription(*hdr)
 	if hasUnsubscribe {
 		isSub = true
 	}
