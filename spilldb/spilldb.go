@@ -281,12 +281,16 @@ func (s *Server) tlsConfig(addr ServerAddr) (*tls.Config, error) {
 	config := &tls.Config{}
 
 	if s.CertManager != nil {
+		config.GetCertificate = s.CertManager.GetCertificate
+
+		// Some SMTP clients connect with bad SNI data for
+		// GetCertificate, so we serve them a (potentially
+		// outdated) static let's encrypt certificate.
 		hello := &tls.ClientHelloInfo{ServerName: addr.Hostname}
 		cert, err := s.CertManager.GetCertificate(hello)
 		if err != nil {
 			return nil, err
 		}
-		//config.GetCertificate = s.certManager.GetCertificate TODO ???
 		config.Certificates = append(config.Certificates, *cert)
 	}
 	return config, nil
