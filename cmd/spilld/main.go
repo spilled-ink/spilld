@@ -85,6 +85,8 @@ func main() {
 			HostPolicy: autocert.HostWhitelist(hosts...),
 			Cache:      autocert.DirCache(filepath.Join(*flagDBDir, "tls_certs")),
 		}
+		// TODO: this clobbers spilldb.Server.tlsConfig,
+		// which has a necessary hack for SMTP.
 		tlsConfig = &tls.Config{
 			GetCertificate: certManager.GetCertificate,
 		}
