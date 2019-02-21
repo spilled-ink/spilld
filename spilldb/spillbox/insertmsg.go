@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -93,7 +95,9 @@ func (c *Box) insertMsg(conn *sqlite.Conn, msg *email.Msg, stagingID int64) (don
 		if _, err := msg.Headers.Encode(hdrBuf); err != nil {
 			return false, err
 		}
-		stmt := conn.Prep(`INSERT INTO Blobs (Content) VALUES ($hdrs);`)
+		stmt := conn.Prep(`INSERT INTO blobs.Blobs (Sha256, Content) VALUES ($sha256, $hdrs);`)
+		hashVal := sha256.Sum256(hdrBuf.Bytes())
+		stmt.SetText("$sha256", hex.EncodeToString(hashVal[:]))
 		stmt.SetZeroBlob("$hdrs", int64(hdrBuf.Len()))
 		if _, err := stmt.Step(); err != nil {
 			return false, err
@@ -272,8 +276,11 @@ func insertPart(conn *sqlite.Conn, msgID email.MsgID, part *email.Part) (err err
 		return err
 	}
 
+	h := sha256.New()
+	blobAndHash := io.MultiWriter(blob, h)
+
 	if part.IsCompressed {
-		gzw := gzip.NewWriter(blob)
+		gzw := gzip.NewWriter(blobAndHash)
 		_, err := io.Copy(gzw, part.Content)
 		if err != nil {
 			blob.Close()
@@ -284,13 +291,20 @@ func insertPart(conn *sqlite.Conn, msgID email.MsgID, part *email.Part) (err err
 			return err
 		}
 	} else {
-		if _, err := io.Copy(blob, part.Content); err != nil {
+		if _, err := io.Copy(blobAndHash, part.Content); err != nil {
 			blob.Close()
 			return err
 		}
 	}
+	if err := blob.Close(); err != nil {
+		return err
+	}
 
-	return blob.Close()
+	stmt := conn.Prep("UPDATE blobs.Blobs SET SHA256 = $SHA256 WHERE BlobID = $BlobID;")
+	stmt.SetInt64("$BlobID", part.BlobID)
+	stmt.SetText("$SHA256", hex.EncodeToString(h.Sum(make([]byte, 0, sha256.Size))))
+	_, err = stmt.Step()
+	return err
 }
 
 func encodeFlags(buf *bytes.Buffer, flags []string) {

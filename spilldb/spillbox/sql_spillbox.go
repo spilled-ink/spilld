@@ -139,7 +139,10 @@ CREATE TABLE IF NOT EXISTS MsgAddresses (
 	FOREIGN KEY(AddressID) REFERENCES Addresses(AddressID)
 );
 
--- MsgParts contains the mime components
+-- MsgParts contains the cleaved multipart MIME components of messages.
+--
+-- The parts are "flattened", so the MIME tree, if desired, needs to be
+-- recreated using the msgbuilder package.
 CREATE TABLE IF NOT EXISTS MsgParts (
 	MsgID          INTEGER NOT NULL,
 	PartNum        INTEGER NOT NULL,
@@ -152,7 +155,6 @@ CREATE TABLE IF NOT EXISTS MsgParts (
 	ContentID      TEXT,    -- mime header Content-ID
 	BlobID         INTEGER, -- Blobs table key in the blobs database
 
-	Path                    TEXT, -- MIME part path as used in IMAP
 	ContentTransferEncoding TEXT,
 	ContentTransferSize     INTEGER,
 	ContentTransferLines    INTEGER,
@@ -160,17 +162,6 @@ CREATE TABLE IF NOT EXISTS MsgParts (
 	PRIMARY KEY(MsgID, PartNum),
 	FOREIGN KEY(MsgID) REFERENCES Msgs(MsgID)
 );
-
--- TODO: move this to its own database
--- CREATE VIRTUAL TABLE IF NOT EXISTS MsgSearch USING fts5(
--- 	MsgID    UNINDEXED,
--- 	ConvoID  UNINDEXED,
--- 	Labels,             -- tokens are "l%x", LabelID.String
--- 	Name,
--- 	Subject,
--- 	Body
--- 	-- TODO prefix "2 3" ?
--- );
 
 -- TODO remove
 INSERT OR IGNORE INTO Contacts (ContactID, Hidden, Robot) VALUES (1, FALSE, FALSE);
@@ -189,6 +180,8 @@ END;
 
 CREATE TABLE IF NOT EXISTS blobs.Blobs (
 	BlobID  INTEGER PRIMARY KEY,
+	SHA256  TEXT,    -- hash of the exact bytes stored in Content
+	Deleted INTEGER, -- tombstone, unix seconds at blob garbage collection
 	Content BLOB
 );
 `
