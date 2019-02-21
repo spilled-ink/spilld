@@ -130,8 +130,7 @@ func (s *Server) Serve(smtp, msa, imap []ServerAddr) error {
 
 	s.shutdownFnsMu.Lock()
 	s.shutdownFns = []func(context.Context) error{
-		func(ctx context.Context) error { s.LocalSender.Shutdown(ctx); return nil }, // TODO
-		func(context.Context) error { s.Deliverer.Shutdown(); return nil },          // TODO
+		func(context.Context) error { s.Deliverer.Shutdown(); return nil }, // TODO
 		func(ctx context.Context) error { s.Processor.Shutdown(ctx); return nil },
 		func(ctx context.Context) error { s.WebFetch.Shutdown(ctx); return nil },
 	}
@@ -139,15 +138,28 @@ func (s *Server) Serve(smtp, msa, imap []ServerAddr) error {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		s.Logf("spilldb: message local deliverer starting")
-		if err := s.LocalSender.Run(); err != nil {
-			errCh <- fmt.Errorf("spilldb.LocalSender: %v", err)
-		}
-		s.Logf("spilldb: message local deliverer shutdown")
-	}()
+	if s.LocalSender != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.Logf("spilldb: message local deliverer starting")
+
+			shutdownFn := func(ctx context.Context) error {
+				s.LocalSender.Shutdown(ctx)
+				return nil
+			}
+			s.shutdownFnsMu.Lock()
+			s.shutdownFns = append(s.shutdownFns, shutdownFn)
+			s.shutdownFnsMu.Unlock()
+
+			if err := s.LocalSender.Run(); err != nil {
+				errCh <- fmt.Errorf("spilldb.LocalSender: %v", err)
+			}
+			s.Logf("spilldb: message local deliverer shutdown")
+		}()
+	} else {
+		s.Logf("spilldb: message local deliverer disabled")
+	}
 
 	wg.Add(1)
 	go func() {
