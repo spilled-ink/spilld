@@ -198,14 +198,14 @@ func InsertPartSummary(conn *sqlite.Conn, msgID email.MsgID, part *email.Part) e
 			PartNum, Name, IsBody, IsAttachment, IsCompressed, CompressedSize,
 			ContentType, ContentID,
 			BlobID,
-			Path, ContentTransferEncoding, ContentTransferSize,
+			ContentTransferEncoding, ContentTransferSize,
 			ContentTransferLines
 		) VALUES (
 			$MsgID,
 			$PartNum, $Name, $IsBody, $IsAttachment, $IsCompressed, $CompressedSize,
 			$ContentType, $ContentID,
 			$BlobID,
-			$Path, $ContentTransferEncoding, $ContentTransferSize,
+			$ContentTransferEncoding, $ContentTransferSize,
 			$ContentTransferLines
 		);`)
 	stmt.SetInt64("$MsgID", int64(msgID))
@@ -220,7 +220,6 @@ func InsertPartSummary(conn *sqlite.Conn, msgID email.MsgID, part *email.Part) e
 	stmt.SetText("$ContentType", part.ContentType)
 	stmt.SetText("$ContentID", part.ContentID)
 	stmt.SetInt64("$BlobID", part.BlobID)
-	stmt.SetText("$Path", part.Path)
 	stmt.SetText("$ContentTransferEncoding", part.ContentTransferEncoding)
 	stmt.SetInt64("$ContentTransferSize", part.ContentTransferSize)
 	stmt.SetInt64("$ContentTransferLines", part.ContentTransferLines)
