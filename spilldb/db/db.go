@@ -3,7 +3,6 @@ package db
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -15,7 +14,7 @@ import (
 	"spilled.ink/spilldb/spillbox"
 )
 
-var ErrUserUnavailable = errors.New("Username unavailable.")
+var ErrUserUnavailable = &UserError{UserMsg: "Username unavailable."}
 
 type DeliveryState int
 
@@ -198,4 +197,20 @@ func AddUserAddress(conn *sqlite.Conn, userID int64, addr string, primaryAddr bo
 	}
 
 	return nil
+}
+
+// UserError is a user-input error that has a friendly message
+// that should be displayed to the user in typical circumstances
+// (say, during form validation).
+type UserError struct {
+	UserMsg string
+	Focus   string // UI containing the error (for example, an <input> ID)
+	Err     error
+}
+
+func (e *UserError) Error() string {
+	if e.Err == nil {
+		return e.UserMsg
+	}
+	return fmt.Sprintf("UserError: %s: %v", e.UserMsg, e.Err)
 }
