@@ -11,13 +11,17 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"time"
 
 	"crawshaw.io/iox"
+	"crawshaw.io/sqlite/sqlitex"
 	"spilled.ink/spilldb"
 	"spilled.ink/spilldb/boxmgmt"
 )
@@ -102,7 +106,6 @@ func main() {
 				fmt.Fprintf(os.Stderr, "%s user data import: %v\n", os.Args[0], err)
 				exit(1)
 			}
-			fmt.Printf("TODO import\n")
 			exit(0)
 		}
 	}
@@ -127,8 +130,85 @@ func listUsers() error {
 	return nil
 }
 
-func importData(u *boxmgmt.User, sourcePath string) error {
-	return fmt.Errorf("TODO")
+func importData(u *boxmgmt.User, sourcePath string) (err error) {
+	conn := u.Box.PoolRW.Get(nil)
+	defer u.Box.PoolRW.Put(conn)
+	defer sqlitex.Save(conn)(&err)
+
+	if err := sqlitex.Exec(conn, fmt.Sprintf(`ATTACH DATABASE %q AS old;`, sourcePath), nil); err != nil {
+		return err
+	}
+
+	const coreCopy = `
+	INSERT INTO ApplePushDevices SELECT * FROM old.ApplePushDevices;
+	DELETE FROM Contacts;
+	INSERT INTO Contacts SELECT * FROM old.Contacts;
+	INSERT INTO Addresses SELECT * FROM old.Addresses;
+	DELETE FROM MailboxSequencing;
+	INSERT INTO MailboxSequencing SELECT * FROM old.MailboxSequencing;
+	DELETE FROM Mailboxes;
+	INSERT INTO Mailboxes SELECT MailboxID, NextUID, UIDValidity, Attrs, Name, DeletedName, Subscribed FROM old.Mailboxes;
+	INSERT INTO Convos SELECT * FROM old.Convos;
+	INSERT INTO ConvoContacts SELECT * FROM old.ConvoContacts;
+	INSERT INTO ConvoLabels SELECT * FROM old.ConvoLabels;
+	INSERT INTO Msgs SELECT MsgID, StagingID, ModSequence, Seed, RawHash, ConvoID, State, ParseError, MailboxID, UID, Flags, EncodedSize, Date, Expunged, NULL AS HdrsBlobID, HasUnsubscribe FROM old.Msgs;
+	INSERT INTO MsgAddresses SELECT * FROM old.MsgAddresses;
+	INSERT INTO MsgParts SELECT MsgID, PartNum, Name, IsBody, IsAttachment, IsCompressed, CompressedSize, ContentType, ContentID, BlobID, ContentTransferEncoding, ContentTransferSize, ContentTransferLines FROM old.MsgParts;
+	INSERT INTO blobs.Blobs SELECT BlobID, NULL AS SHA256, NULL AS Deleted, Content FROM old.MsgPartContents;
+	`
+	if err := sqlitex.ExecScript(conn, coreCopy); err != nil {
+		return err
+	}
+
+	stmt := conn.Prep(`SELECT MsgID, HdrsAll FROM old.Msgs;`)
+	for {
+		if hasNext, err := stmt.Step(); err != nil {
+			return err
+		} else if !hasNext {
+			break
+		}
+		msgID := stmt.GetInt64("MsgID")
+		b := stmt.GetText("HdrsAll")
+
+		stmt := conn.Prep("INSERT INTO blobs.Blobs (Content) VALUES ($content);")
+		stmt.SetBytes("$content", []byte(b))
+		if _, err := stmt.Step(); err != nil {
+			return err
+		}
+		blobID := conn.LastInsertRowID()
+		fmt.Printf("header blobID=%d for msgid=%d\n", blobID, msgID)
+
+		stmt = conn.Prep("UPDATE Msgs SET HdrsBlobID = $blobID WHERE MsgID = $msgID;")
+		stmt.SetInt64("$blobID", blobID)
+		stmt.SetInt64("$msgID", msgID)
+		if _, err := stmt.Step(); err != nil {
+			return err
+		}
+	}
+
+	stmt = conn.Prep("SELECT BlobID, Content FROM blobs.Blobs WHERE SHA256 IS NULL;")
+	for {
+		if hasNext, err := stmt.Step(); err != nil {
+			return err
+		} else if !hasNext {
+			break
+		}
+		blobID := stmt.GetInt64("BlobID")
+		h := sha256.New()
+		if _, err := io.Copy(h, stmt.GetReader("Content")); err != nil {
+			return err
+		}
+		hash := hex.EncodeToString(h.Sum(nil))
+
+		stmt := conn.Prep("UPDATE blobs.Blobs SET SHA256 = $sha256 WHERE BlobID = $blobID;")
+		stmt.SetInt64("$blobID", blobID)
+		stmt.SetText("$sha256", hash)
+		if _, err := stmt.Step(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func findUserID(username string) (int64, error) {
