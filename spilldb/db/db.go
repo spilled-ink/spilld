@@ -11,7 +11,6 @@ import (
 	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
 	"golang.org/x/crypto/bcrypt"
-	"spilled.ink/spilldb/spillbox"
 )
 
 var ErrUserUnavailable = &UserError{UserMsg: "Username unavailable."}
@@ -165,7 +164,7 @@ func AddUser(conn *sqlite.Conn, details UserDetails) (userID int64, err error) {
 	stmt.SetBool("$phoneVerified", details.PhoneVerified)
 	stmt.SetBytes("$passHash", passHash)
 	stmt.SetText("$secretBoxKey", hex.EncodeToString(secretBoxKey))
-	userID, err = spillbox.InsertRandID(stmt, "$userID")
+	userID, err = sqlitex.InsertRandID(stmt, "$userID", 1, 1<<23)
 	if err != nil {
 		if sqlite.ErrCode(err) == sqlite.SQLITE_CONSTRAINT_UNIQUE {
 			return 0, ErrUserUnavailable
