@@ -44,6 +44,7 @@ type Server struct {
 	WebFetch    *webfetch.Client
 	BoxMgmt     *boxmgmt.BoxMgmt
 	MsgBuilder  *msgbuilder.Builder
+	Janitor     *db.Janitor
 	Logf        func(format string, v ...interface{})
 
 	cacheDB *sqlitex.Pool
@@ -115,6 +116,7 @@ func New(filer *iox.Filer, dbDir string) (*Server, error) {
 	s.Processor = processor.NewProcessor(s.DB, s.Filer, s.WebFetch, s.LocalSender.Process)
 	s.Deliverer = deliverer.NewDeliverer(s.DB, s.Filer)
 	s.MsgBuilder = &msgbuilder.Builder{Filer: filer}
+	s.Janitor = db.NewJanitor(s.DB)
 
 	return s, nil
 }
@@ -133,6 +135,7 @@ func (s *Server) Serve(smtp, msa, imap []ServerAddr) error {
 		func(context.Context) error { s.Deliverer.Shutdown(); return nil }, // TODO
 		func(ctx context.Context) error { s.Processor.Shutdown(ctx); return nil },
 		func(ctx context.Context) error { s.WebFetch.Shutdown(ctx); return nil },
+		s.Janitor.Shutdown,
 	}
 	s.shutdownFnsMu.Unlock()
 
@@ -179,6 +182,16 @@ func (s *Server) Serve(smtp, msa, imap []ServerAddr) error {
 			errCh <- fmt.Errorf("spilldb.Processor: %v", err)
 		}
 		s.Logf("spilldb: incoming message processor shutdown")
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.Logf("spilldb: janitor starting")
+		if err := s.Janitor.Run(); err != nil {
+			errCh <- fmt.Errorf("spilldb.Jantior: %v", err)
+		}
+		s.Logf("spilldb: janitor shutdown")
 	}()
 
 	for _, addr := range smtp {
