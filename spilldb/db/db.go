@@ -1,8 +1,10 @@
 package db
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"time"
@@ -212,4 +214,31 @@ func (e *UserError) Error() string {
 		return e.UserMsg
 	}
 	return fmt.Sprintf("UserError: %s: %v", e.UserMsg, e.Err)
+}
+
+type Log struct {
+	Where    string
+	What     string
+	When     time.Time
+	Duration time.Duration
+	Err      error
+	Data     map[string]interface{}
+}
+
+func (l Log) String() string {
+	buf := new(bytes.Buffer)
+	fmt.Fprintf(buf, `{"where": %q, "what": %q, "when": "%s", "duration": "%s", `, l.Where, l.What, l.When, l.Duration)
+	if l.Err != nil {
+		fmt.Fprintf(buf, `"err": %q, `, l.Err.Error())
+	}
+	if len(l.Data) > 0 {
+		b, err := json.Marshal(l.Data)
+		if err != nil {
+			fmt.Fprintf(buf, `"data_marshal_err": %q, `, err.Error())
+		} else {
+			fmt.Fprintf(buf, `"data": %s, `, b)
+		}
+	}
+	buf.WriteByte('}')
+	return buf.String()
 }
