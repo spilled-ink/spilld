@@ -13,7 +13,6 @@ import (
 	"crawshaw.io/iox"
 	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
-	"golang.org/x/crypto/bcrypt"
 	"spilled.ink/smtp/smtpserver"
 	"spilled.ink/spilldb/db"
 )
@@ -23,48 +22,30 @@ type MsgMaker struct {
 	dbpool    *sqlitex.Pool
 	filer     *iox.Filer
 	msgDoneFn func(stagingID int64)
+	auth      *db.Authenticator
 }
 
 func New(ctx context.Context, dbpool *sqlitex.Pool, filer *iox.Filer, doneFn func(stagingID int64)) *MsgMaker {
+	logf := log.Printf // TODO
 	p := &MsgMaker{
 		ctx:       ctx,
 		dbpool:    dbpool,
 		filer:     filer,
 		msgDoneFn: doneFn,
+		auth: &db.Authenticator{
+			DB:    dbpool,
+			Logf:  logf,
+			Where: "smtp",
+		},
 	}
 	return p
 }
 
 func (p *MsgMaker) Auth(identity, user, password []byte, remoteAddr string) uint64 {
-	password = bytes.ToUpper(password)
-	password = bytes.Replace(password, []byte(" "), []byte(""), -1)
-
-	conn := p.dbpool.Get(p.ctx)
-	if conn == nil {
-		return 0
+	userID, err := p.auth.AuthDevice(p.ctx, remoteAddr, string(user), password)
+	if err != nil {
+		return 0 // logging done by AuthDevice method
 	}
-	defer p.dbpool.Put(conn)
-
-	var userID int64
-	stmt := conn.Prep(`SELECT DeviceID, UserID, AppPassHash FROM Devices
-		WHERE UserID IN (SELECT UserID FROM UserAddresses WHERE Address = $username);`)
-	stmt.SetBytes("$username", user)
-	for {
-		if hasNext, err := stmt.Step(); err != nil {
-			return 0
-		} else if !hasNext {
-			break
-		}
-
-		passHash := []byte(stmt.GetText("AppPassHash"))
-		if err := bcrypt.CompareHashAndPassword(passHash, password); err == nil {
-			userID = stmt.GetInt64("UserID")
-			stmt.Reset()
-			break
-		}
-	}
-
-	// TODO: throttle if userID == 0
 	return uint64(userID)
 }
 
