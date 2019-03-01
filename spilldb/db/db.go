@@ -1,12 +1,12 @@
 package db
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"crawshaw.io/iox"
@@ -245,17 +245,24 @@ type Log struct {
 }
 
 func (l Log) String() string {
-	buf := new(bytes.Buffer)
-	fmt.Fprintf(buf, `{"where": %q, "what": %q, "when": "%s", "duration": "%s", `, l.Where, l.What, l.When, l.Duration)
+	buf := new(strings.Builder)
+	fmt.Fprintf(buf, `{"where": %q, "what": %q, `, l.Where, l.What)
+
+	buf.WriteString(`"when": "`)
+	buf.Write(l.When.AppendFormat(make([]byte, 0, 64), time.RFC3339Nano))
+	buf.WriteString(`"`)
+
+	fmt.Fprintf(buf, `, "duration": "%s"`, l.Duration)
+
 	if l.Err != nil {
-		fmt.Fprintf(buf, `"err": %q, `, l.Err.Error())
+		fmt.Fprintf(buf, `, "err": %q`, l.Err.Error())
 	}
 	if len(l.Data) > 0 {
 		b, err := json.Marshal(l.Data)
 		if err != nil {
-			fmt.Fprintf(buf, `"data_marshal_err": %q, `, err.Error())
+			fmt.Fprintf(buf, `, "data_marshal_err": %q`, err.Error())
 		} else {
-			fmt.Fprintf(buf, `"data": %s, `, b)
+			fmt.Fprintf(buf, `, "data": %s`, b)
 		}
 	}
 	buf.WriteByte('}')
