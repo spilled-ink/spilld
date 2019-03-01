@@ -13,7 +13,6 @@ import (
 
 	"crawshaw.io/iox"
 	"crawshaw.io/iox/webfetch"
-	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
 	"golang.org/x/crypto/acme/autocert"
 	"spilled.ink/email/msgbuilder"
@@ -75,21 +74,10 @@ func New(filer *iox.Filer, dbDir string) (*Server, error) {
 		cacheDBFile = filepath.Join(dbDir, "spilld_cache.db")
 	}
 
-	conn, err := sqlite.OpenConn(dbfile, 0)
+	var err error
+	s.DB, err = db.Open(dbfile)
 	if err != nil {
-		return nil, fmt.Errorf("spilldb: open main db: %v", err)
-	}
-	if err := db.Init(conn); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("spilldb: init main db: %v", err)
-	}
-	if err := conn.Close(); err != nil {
-		return nil, fmt.Errorf("spilldb: init main db close: %v", err)
-	}
-
-	s.DB, err = sqlitex.Open(dbfile, 0, 24)
-	if err != nil {
-		return nil, fmt.Errorf("spilldb: open main pool: %v", err)
+		return nil, err
 	}
 
 	s.BoxMgmt, err = boxmgmt.New(filer, s.DB, dbDir)
