@@ -49,11 +49,16 @@ func (a *Authenticator) AuthDevice(ctx context.Context, remoteAddr, username str
 	password = bytes.ToUpper(password)
 	password = bytes.Replace(password, []byte(" "), []byte(""), -1)
 
-	a.Throttle.Throttle(remoteAddr)
-	a.Throttle.Throttle(username)
+	if remoteAddr != "" && a.Throttle.Throttle(remoteAddr) {
+		log.Data["throttle"] = "remote_addr"
+	} else if a.Throttle.Throttle(username) {
+		log.Data["throttle"] = "username"
+	}
 	defer func() {
 		if err != nil {
-			a.Throttle.Add(remoteAddr)
+			if remoteAddr != "" {
+				a.Throttle.Add(remoteAddr)
+			}
 			a.Throttle.Add(username)
 		}
 	}()
