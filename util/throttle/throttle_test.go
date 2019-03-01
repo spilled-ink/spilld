@@ -16,37 +16,33 @@ func TestThrottle(t *testing.T) {
 	}()
 
 	tr := Throttle{}
-	tr.Throttle("foo") // interal map not yet initialized
-	if slept != 0 {
+	if tr.Throttle("foo") || slept != 0 {
+		// interal map not yet initialized
 		t.Errorf("empty throttle is throttling: %v", slept)
 		slept = 0
 	}
 
 	tr.Add("foo")
-	tr.Throttle("foo")
-	if slept != 0 {
+	if tr.Throttle("foo") || slept != 0 {
 		t.Errorf("throttling inside initial buffer: %v", slept)
 		slept = 0
 	}
 	for i := 0; i < 10; i++ {
 		tr.Add("foo")
 	}
-	tr.Throttle("foo")
-	if slept != 3*time.Second {
+	if !tr.Throttle("foo") || slept != 3*time.Second {
 		t.Errorf("want throttling, got: %v", slept)
 	}
 	slept = 0
 	now = now.Add(4 * time.Second)
-	tr.Throttle("foo")
-	if slept != 0 {
+	if tr.Throttle("foo") || slept != 0 {
 		t.Errorf("throttling after sufficient wait: %v", slept)
 	}
 	slept = 0
 
 	now = now.Add(61 * time.Second)
 
-	tr.Throttle("foo")
-	if slept != 0 {
+	if tr.Throttle("foo") || slept != 0 {
 		t.Errorf("throttling after cleaning window: %v", slept)
 		slept = 0
 	}

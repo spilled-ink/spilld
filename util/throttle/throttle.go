@@ -16,7 +16,7 @@ type state struct {
 	failures int
 }
 
-func (tr *Throttle) Throttle(val string) {
+func (tr *Throttle) Throttle(val string) bool {
 	const delay = 3 * time.Second
 	const window = 60 * time.Second
 	const buffer = 10
@@ -38,7 +38,9 @@ func (tr *Throttle) Throttle(val string) {
 
 	if state.failures >= buffer && now.Sub(state.last) < delay {
 		timeSleep(delay)
+		return true
 	}
+	return false
 }
 
 func (tr *Throttle) Add(val string) {
