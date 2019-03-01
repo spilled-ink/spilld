@@ -6,39 +6,52 @@ import (
 )
 
 type Throttle struct {
-	mu      sync.Mutex
-	keys    map[string]time.Time
-	cleaned time.Time
+	mu       sync.Mutex
+	attempts map[string]state
+	cleaned  time.Time
 }
 
-func (t *Throttle) Throttle(val string) {
-	t.mu.Lock()
+type state struct {
+	last     time.Time
+	failures int
+}
 
+func (tr *Throttle) Throttle(val string) {
 	const delay = 3 * time.Second
+	const window = 60 * time.Second
+	const buffer = 10
 
-	if time.Since(t.cleaned) > 60*time.Second {
+	now := timeNow()
+
+	tr.mu.Lock()
+	if now.Sub(tr.cleaned) > window {
 		// Cleanup old keys.
-		for key, tm := range t.keys {
-			if time.Since(tm) > delay {
-				delete(t.keys, key)
+		for key, tm := range tr.attempts {
+			if now.Sub(tm.last) > delay {
+				delete(tr.attempts, key)
 			}
 		}
+		tr.cleaned = now
 	}
-	d := time.Since(t.keys[val])
-	t.mu.Unlock()
+	state := tr.attempts[val]
+	tr.mu.Unlock()
 
-	if d < delay {
-		sleepFn(delay)
+	if state.failures >= buffer && now.Sub(state.last) < delay {
+		timeSleep(delay)
 	}
 }
 
-func (t *Throttle) Add(val string) {
-	t.mu.Lock()
-	if t.keys == nil {
-		t.keys = make(map[string]time.Time)
+func (tr *Throttle) Add(val string) {
+	tr.mu.Lock()
+	if tr.attempts == nil {
+		tr.attempts = make(map[string]state)
 	}
-	t.keys[val] = time.Now()
-	t.mu.Unlock()
+	state := tr.attempts[val]
+	state.last = timeNow()
+	state.failures++
+	tr.attempts[val] = state
+	tr.mu.Unlock()
 }
 
-var sleepFn = time.Sleep
+var timeSleep = time.Sleep
+var timeNow = time.Now
