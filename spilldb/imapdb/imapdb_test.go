@@ -14,12 +14,11 @@ import (
 	"time"
 
 	"crawshaw.io/iox"
-	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
+	"spilled.ink/email/msgcleaver"
 	"spilled.ink/imap"
 	"spilled.ink/imap/imapserver"
 	"spilled.ink/imap/imaptest"
-	"spilled.ink/email/msgcleaver"
 	"spilled.ink/spilldb/boxmgmt"
 	"spilled.ink/spilldb/db"
 )
@@ -170,21 +169,9 @@ func newDataStore(filer *iox.Filer, logf func(format string, v ...interface{})) 
 		return nil, err
 	}
 	logf("data store tempdir: %s", dir)
-	dbfile := filepath.Join(dir, "spilld.db")
-	conn, err := sqlite.OpenConn(dbfile, 0)
+	dbpool, err := db.Open(filepath.Join(dir, "spilld.db"))
 	if err != nil {
-		return nil, fmt.Errorf("open initial db: %v", err)
-	}
-	if err := db.Init(conn); err != nil {
-		return nil, fmt.Errorf("init db: %v", err)
-	}
-	if err := conn.Close(); err != nil {
-		return nil, fmt.Errorf("init db close: %v", err)
-	}
-
-	dbpool, err := sqlitex.Open(dbfile, 0, 2)
-	if err != nil {
-		return nil, fmt.Errorf("dbpool: %v", err)
+		return nil, err
 	}
 
 	boxMgmt, err := boxmgmt.New(filer, dbpool, dir)
