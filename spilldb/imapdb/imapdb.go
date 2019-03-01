@@ -16,10 +16,11 @@ import (
 	"sync"
 	"time"
 
+	"spilled.ink/spilldb/db"
+
 	"crawshaw.io/iox"
 	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
-	"golang.org/x/crypto/bcrypt"
 	"spilled.ink/email"
 	"spilled.ink/email/msgcleaver"
 	"spilled.ink/imap"
@@ -35,8 +36,11 @@ func NewBackend(dbpool *sqlitex.Pool, filer *iox.Filer, boxmgmt *boxmgmt.BoxMgmt
 		filer:   filer,
 		boxmgmt: boxmgmt,
 		logf:    logf,
-
-		lastAttempt: make(map[string]time.Time),
+		auth: &db.Authenticator{
+			DB:    dbpool,
+			Logf:  logf,
+			Where: "imap",
+		},
 	}
 }
 
@@ -69,81 +73,22 @@ type backend struct {
 	filer   *iox.Filer
 	boxmgmt *boxmgmt.BoxMgmt
 	logf    func(format string, v ...interface{})
-
-	mu          sync.Mutex
-	lastAttempt map[string]time.Time
+	auth    *db.Authenticator
 }
 
 func (b *backend) Login(c *imapserver.Conn, username, password []byte) (int64, imap.Session, error) {
-	const loginDelay = 3 * time.Second
-
-	// TODO: plumb user IP for rate limiting / banning
-	// TODO: throttling with s.throttleInc
-	b.mu.Lock()
-	now := time.Now()
-	last := now.Sub(b.lastAttempt[string(username)])
-	b.lastAttempt[string(username)] = now
-	b.mu.Unlock()
-
-	if last < loginDelay {
-		//time.Sleep(loginDelay)
-	}
-
-	b.logf("login %q", username)
-
-	conn := b.dbpool.Get(c.Context)
-	if conn == nil {
-		return 0, nil, context.Canceled
-	}
-	defer b.dbpool.Put(conn)
-
-	password = bytes.ToUpper(password)
-	password = bytes.Replace(password, []byte(" "), []byte(""), -1)
-
-	devices := 0
-	var userID, deviceID int64
-	stmt := conn.Prep(`SELECT DeviceID, UserID, AppPassHash FROM Devices
-		WHERE UserID IN (SELECT UserID FROM UserAddresses WHERE Address = $username);`)
-	stmt.SetBytes("$username", username)
-	for {
-		if hasNext, err := stmt.Step(); err != nil {
-			b.logf("login failed for: %q: %v", username, err)
-			return 0, nil, fmt.Errorf("imap: login failed")
-		} else if !hasNext {
-			break
-		}
-		devices++
-
-		passHash := []byte(stmt.GetText("AppPassHash"))
-		if err := bcrypt.CompareHashAndPassword(passHash, password); err == nil {
-			deviceID = stmt.GetInt64("DeviceID")
-			userID = stmt.GetInt64("UserID")
-			stmt.Reset()
-			break
-		}
-	}
-	if devices == 0 {
-		b.logf("bad credentials, unknown username: %q", username)
+	ctx := c.Context
+	remoteAddr := "TODO" // TODO
+	userID, err := b.auth.AuthDevice(ctx, remoteAddr, string(username), password)
+	if err == db.ErrBadCredentials {
 		return 0, nil, imapserver.ErrBadCredentials
-	} else if userID == 0 {
-		b.logf("bad password for username: %q", username)
-		return 0, nil, imapserver.ErrBadCredentials
+	} else if err != nil {
+		return 0, nil, err
 	}
 
-	user, err := b.boxmgmt.Open(c.Context, userID)
+	user, err := b.boxmgmt.Open(ctx, userID)
 	if err != nil {
-		b.logf("boxmgmt.Open failed for %q: %v", username, err)
-		return 0, nil, fmt.Errorf("imap: login error")
-	}
-
-	stmt = conn.Prep(`UPDATE Devices
-		SET LastAccessTime = $time, LastAccessAddr = $addr
-		WHERE DeviceID = $deviceID;`)
-	stmt.SetInt64("$time", time.Now().Unix())
-	stmt.SetText("$addr", "TODO")
-	if _, err := stmt.Step(); err != nil {
-		b.logf("device update failed for %q deviceID=%d: %v", username, deviceID, err)
-		return 0, nil, fmt.Errorf("imap: login error")
+		return 0, nil, err
 	}
 
 	logUserPrefix := fmt.Sprintf("user%d: ", userID)
