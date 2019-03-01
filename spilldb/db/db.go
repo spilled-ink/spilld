@@ -53,6 +53,25 @@ func (d DeliveryState) String() string {
 	}
 }
 
+func Open(dbfile string) (*sqlitex.Pool, error) {
+	conn, err := sqlite.OpenConn(dbfile, 0)
+	if err != nil {
+		return nil, fmt.Errorf("db.Open: main init open: %v", err)
+	}
+	if err := Init(conn); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("db.Open: main init: %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		return nil, fmt.Errorf("db.Open: main init close: %v", err)
+	}
+	db, err := sqlitex.Open(dbfile, 0, 24)
+	if err != nil {
+		return nil, fmt.Errorf("db.Open: main pool: %v", err)
+	}
+	return db, nil
+}
+
 func Init(conn *sqlite.Conn) (err error) {
 	if err := sqlitex.ExecTransient(conn, "PRAGMA journal_mode=WAL;", nil); err != nil {
 		return err
