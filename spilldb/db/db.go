@@ -209,11 +209,13 @@ func AddUserAddress(conn *sqlite.Conn, userID int64, addr string, primaryAddr bo
 		return err
 	}
 
-	stmt = conn.Prep(`UPDATE UserAddresses SET PrimaryAddr = FALSE WHERE UserID = $userID AND Address <> $addr`)
-	stmt.SetText("$addr", addr)
-	stmt.SetInt64("$userID", userID)
-	if _, err := stmt.Step(); err != nil {
-		return err
+	if primaryAddr {
+		stmt = conn.Prep(`UPDATE UserAddresses SET PrimaryAddr = FALSE WHERE UserID = $userID AND Address <> $addr;`)
+		stmt.SetText("$addr", addr)
+		stmt.SetInt64("$userID", userID)
+		if _, err := stmt.Step(); err != nil {
+			return err
+		}
 	}
 
 	return nil
