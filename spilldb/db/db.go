@@ -206,6 +206,9 @@ func AddUserAddress(conn *sqlite.Conn, userID int64, addr string, primaryAddr bo
 	stmt.SetInt64("$userID", userID)
 	stmt.SetBool("$primaryAddr", primaryAddr)
 	if _, err := stmt.Step(); err != nil {
+		if sqlite.ErrCode(err) == sqlite.SQLITE_CONSTRAINT_PRIMARYKEY {
+			return &UserError{UserMsg: fmt.Sprintf("Address %q is already assigned.", addr)}
+		}
 		return err
 	}
 

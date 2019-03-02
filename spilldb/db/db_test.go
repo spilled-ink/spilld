@@ -142,4 +142,14 @@ func TestAddUser(t *testing.T) {
 	if !reflect.DeepEqual(wantOtherAddrs, gotOtherAddrs) {
 		t.Errorf("other addrs: %v, want %v", gotOtherAddrs, wantOtherAddrs)
 	}
+
+	if err := db.AddUserAddress(conn, userID, "bop@spilled.ink", false); err == nil {
+		t.Fatal("succeeded in reusing email address")
+	} else {
+		if userErr, _ := err.(*db.UserError); userErr == nil {
+			t.Fatal("reused email address error is not a user error")
+		} else if !strings.Contains(userErr.UserMsg, "already assigned") {
+			t.Fatalf(`user error message does not mention "already assigned": %q`, userErr.UserMsg)
+		}
+	}
 }
