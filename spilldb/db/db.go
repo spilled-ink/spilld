@@ -224,6 +224,19 @@ func AddUserAddress(conn *sqlite.Conn, userID int64, addr string, primaryAddr bo
 	return nil
 }
 
+func SetUserPrimaryAddr(conn *sqlite.Conn, userID int64, addr string) error {
+	stmt := conn.Prep(`UPDATE UserAddresses SET PrimaryAddr = (CASE WHEN Address = $addr THEN TRUE ELSE FALSE END) WHERE UserID = $userID;`)
+	stmt.SetText("$addr", addr)
+	stmt.SetInt64("$userID", userID)
+	if _, err := stmt.Step(); err != nil {
+		return err
+	}
+	if conn.Changes() == 0 {
+		return fmt.Errorf("db.SetUserPrimaryAddr: unknown address")
+	}
+	return nil
+}
+
 // UserError is a user-input error that has a friendly message
 // that should be displayed to the user in typical circumstances
 // (say, during form validation).
