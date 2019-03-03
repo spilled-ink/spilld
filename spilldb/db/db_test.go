@@ -82,6 +82,7 @@ func TestAddUser(t *testing.T) {
 	userID, err := db.AddUser(conn, db.UserDetails{
 		Username: username,
 		Password: "agenericpassword",
+		Admin:    true,
 	})
 	pwd := strings.ToUpper(devPassword)
 	if _, err := db.AddDevice(conn, userID, "testdevice", pwd); err != nil {

@@ -159,6 +159,7 @@ type UserDetails struct {
 	PhoneVerified bool
 	Username      string
 	Password      string
+	Admin         bool
 }
 
 func AddUser(conn *sqlite.Conn, details UserDetails) (userID int64, err error) {
@@ -178,13 +179,14 @@ func AddUser(conn *sqlite.Conn, details UserDetails) (userID int64, err error) {
 			PassHash, SecretBoxKey, Admin, Locked
 		) VALUES (
 			$userID, $fullName, $phoneNumber, $phoneVerified,
-			$passHash, $secretBoxKey, FALSE, FALSE
+			$passHash, $secretBoxKey, $admin, FALSE
 		);`)
 	stmt.SetText("$fullName", details.FullName)
 	stmt.SetText("$phoneNumber", details.PhoneNumber)
 	stmt.SetBool("$phoneVerified", details.PhoneVerified)
 	stmt.SetBytes("$passHash", passHash)
 	stmt.SetText("$secretBoxKey", hex.EncodeToString(secretBoxKey))
+	stmt.SetBool("$admin", details.Admin)
 	userID, err = sqlitex.InsertRandID(stmt, "$userID", 1, 1<<23)
 	if err != nil {
 		if sqlite.ErrCode(err) == sqlite.SQLITE_CONSTRAINT_UNIQUE {
