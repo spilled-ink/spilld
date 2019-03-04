@@ -80,15 +80,18 @@ func TestAddUser(t *testing.T) {
 	const username = "foo@spilled.ink"
 	const devPassword = "aaaabbbbccccdddd"
 	userID, err := db.AddUser(conn, db.UserDetails{
-		Username: username,
-		Password: "agenericpassword",
-		Admin:    true,
+		EmailAddr: username,
+		Password:  "agenericpassword",
+		Admin:     true,
 	})
 	pwd := strings.ToUpper(devPassword)
 	if _, err := db.AddDevice(conn, userID, "testdevice", pwd); err != nil {
 		t.Fatal(err)
 	}
 
+	if err := db.AddUserAddress(conn, userID, "bar", false); err == nil {
+		t.Fatal("no error message for adding address without domain")
+	}
 	if err := db.AddUserAddress(conn, userID, "bar@spilled.ink", false); err != nil {
 		t.Fatal(err)
 	}

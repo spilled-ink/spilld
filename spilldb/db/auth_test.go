@@ -32,8 +32,8 @@ func TestAuthenticator(t *testing.T) {
 	const username = "foo@spilled.ink"
 	const devPassword = "aaaabbbbccccdddd"
 	userID, err := db.AddUser(conn, db.UserDetails{
-		Username: username,
-		Password: "agenericpassword",
+		EmailAddr: username,
+		Password:  "agenericpassword",
 	})
 	pwd := strings.ToUpper(devPassword)
 	if _, err := db.AddDevice(conn, userID, "testdevice", pwd); err != nil {

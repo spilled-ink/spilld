@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS Users (
 );
 
 CREATE TABLE IF NOT EXISTS UserAddresses (
-	Address     TEXT PRIMARY KEY, -- "user@domain"
+	Address     TEXT PRIMARY KEY, -- "user@domain", always lower case
 	UserID      INTEGER NOT NULL,
 	PrimaryAddr BOOLEAN,
 

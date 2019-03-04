@@ -13,6 +13,7 @@ import (
 	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
 	"golang.org/x/crypto/bcrypt"
+	"spilled.ink/third_party/imf"
 )
 
 var ErrUserUnavailable = &UserError{UserMsg: "Username unavailable."}
@@ -157,9 +158,25 @@ type UserDetails struct {
 	FullName      string
 	PhoneNumber   string
 	PhoneVerified bool
-	Username      string
+	EmailAddr     string // user@domain
 	Password      string
 	Admin         bool
+}
+
+func (details *UserDetails) Validate() error {
+	//if fullname == "" {
+	//	return &UserError{UserMsg: "missing full name"}
+	//}
+	if len(details.FullName) > 150 {
+		return &UserError{UserMsg: "full name too long"}
+	}
+	if len(details.Password) < 8 {
+		return &UserError{UserMsg: "password less than 8 characters"}
+	}
+	if _, err := imf.ParseAddress(details.EmailAddr); err != nil {
+		return &UserError{UserMsg: err.Error()}
+	}
+	return nil
 }
 
 func AddUser(conn *sqlite.Conn, details UserDetails) (userID int64, err error) {
@@ -195,7 +212,7 @@ func AddUser(conn *sqlite.Conn, details UserDetails) (userID int64, err error) {
 		return 0, err
 	}
 
-	if err := AddUserAddress(conn, userID, details.Username, true); err != nil {
+	if err := AddUserAddress(conn, userID, details.EmailAddr, true); err != nil {
 		return 0, err
 	}
 
@@ -203,8 +220,12 @@ func AddUser(conn *sqlite.Conn, details UserDetails) (userID int64, err error) {
 }
 
 func AddUserAddress(conn *sqlite.Conn, userID int64, addr string, primaryAddr bool) error {
+	if strings.LastIndexByte(addr, '@') == -1 {
+		return &UserError{UserMsg: "Invalid email address, missing @domain."}
+	}
+
 	stmt := conn.Prep(`INSERT INTO UserAddresses (Address, UserID, PrimaryAddr) VALUES ($addr, $userID, $primaryAddr);`)
-	stmt.SetText("$addr", addr)
+	stmt.SetText("$addr", strings.ToLower(addr))
 	stmt.SetInt64("$userID", userID)
 	stmt.SetBool("$primaryAddr", primaryAddr)
 	if _, err := stmt.Step(); err != nil {
