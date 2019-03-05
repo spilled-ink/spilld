@@ -331,7 +331,12 @@ type Conn struct {
 	updates       []idleUpdate
 }
 
-func (c *Conn) RemoteAddr() net.Addr { return c.netConn.RemoteAddr() }
+func (c *Conn) RemoteAddr() net.Addr {
+	if c.netConn == nil {
+		return nil
+	}
+	return c.netConn.RemoteAddr()
+}
 
 func (c *Conn) initBufio(r io.Reader, w io.Writer) {
 	if c.debugFile == nil {
