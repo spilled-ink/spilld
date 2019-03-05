@@ -23,7 +23,7 @@ func TestFetch(t *testing.T, server *TestServer) {
 	t.Run("RFC822.SIZE", func(t *testing.T) {
 		s.t = t
 		s.write("02 UID FETCH 1,3,4 (RFC822.SIZE)\r\n")
-		s.readExpectPrefix("* 1 FETCH (RFC822.SIZE 1473310 UID 1)")
+		s.readExpectPrefix("* 1 FETCH (RFC822.SIZE 1473573 UID 1)")
 		s.readExpectPrefix("* 2 FETCH (RFC822.SIZE 598 UID 3)")
 		s.readExpectPrefix("* 3 FETCH (RFC822.SIZE 468 UID 4)")
 		s.readExpectPrefix(`02 OK`)
@@ -32,7 +32,7 @@ func TestFetch(t *testing.T, server *TestServer) {
 		s.t = t
 		s.write("02 UID FETCH 1,3:4 (BODYSTRUCTURE)\r\n")
 		// testdata/msg1.eml:
-		s.readExpect(`BODYSTRUCTURE .* \(image png \(\) "<fetchasset4>" NIL base64 141086\) \(image png \(\) "<fetchasset5>" NIL base64 309226\) .*`)
+		s.readExpect(`BODYSTRUCTURE .* \(image png \(name fetchasset4\) "<fetchasset4>" NIL base64 141086\) \(image png \(name fetchasset5\) "<fetchasset5>" NIL base64 309226\) .*`)
 		// testdata/msg3.eml:
 		s.readExpect(`BODYSTRUCTURE \(\(text plain .* 11 1\) \(text html .* 17 1\) \(text rich .* 135 4\) ALTERNATIVE .*boundary ".PM0QwL`)
 		// testdata/msg4.eml:
@@ -203,7 +203,7 @@ func TestFetchBody(t *testing.T, server *TestServer) {
 	t.Run("msg1 BODY[2.14.HEADER]", func(t *testing.T) {
 		s.t = t
 		s.write("02 FETCH 1 (BODY[2.14.HEADER])\r\n")
-		s.readExpectPrefix(`* 1 FETCH (BODY[2.14.HEADER] {144}`)
+		s.readExpectPrefix(`* 1 FETCH (BODY[2.14.HEADER] {`)
 		s.readExpectPrefix(`Content-Disposition: inline; filename="fetchasset12"`)
 		s.readExpectPrefix(`Content-ID: <fetchasset12>`)
 		s.readExpectPrefix(`Content-Transfer-Encoding: base64`)
