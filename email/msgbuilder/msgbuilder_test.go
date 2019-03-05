@@ -187,9 +187,10 @@ ch encoding to make sure we don't go anywhere near the 1000 character limit=
 				IsBody:      true,
 			},
 			{
-				Content:     strReader("PDF\u0000"),
-				ContentType: "application/pdf",
-				Name:        "invoice.pdf",
+				Content:      strReader("PDF\u0000"),
+				ContentType:  "application/pdf",
+				IsAttachment: true,
+				Name:         "invoice.pdf",
 			},
 		},
 		want: `MIME-Version: 1.0
@@ -251,9 +252,10 @@ UERGAA==
 				Name:        "img2.svg",
 			},
 			{
-				Content:     strReader("PDF\u0000"),
-				ContentType: "application/pdf",
-				Name:        "invoice.pdf",
+				Content:      strReader("PDF\u0000"),
+				ContentType:  "application/pdf",
+				Name:         "invoice.pdf",
+				IsAttachment: true,
 			},
 		},
 		want: `MIME-Version: 1.0
@@ -278,13 +280,13 @@ Content-Type: text/html; charset="UTF-8"
 --.BFtzyG5P+V/2YqXu.
 Content-Disposition: inline; filename="img1.svg"
 Content-Id: <v1@mycid>
-Content-Type: image/svg+xml
+Content-Type: image/svg+xml; name="img1.svg"
 
 <svg height="10" width="10"></svg>
 --.BFtzyG5P+V/2YqXu.
 Content-Disposition: inline; filename="img2.svg"
 Content-Id: <v2@mycid>
-Content-Type: image/svg+xml
+Content-Type: image/svg+xml; name="img2.svg"
 
 <svg height="20" width="20"></svg>
 --.BFtzyG5P+V/2YqXu.--
@@ -303,6 +305,56 @@ Content-Type: application/pdf; name="invoice.pdf"
 
 UERGAA==
 --.6Cq99EotC3X7GA2v.--
+`,
+	},
+	{
+		name:   "attachment with contentid",
+		header: map[string]string{},
+		parts: []email.Part{
+			{
+				Content:     strReader("Hello, World!"),
+				ContentType: "text/plain",
+				IsBody:      true,
+			},
+			{
+				Content:     strReader(`<b>Hello</b>, World!`),
+				ContentType: "text/html",
+				IsBody:      true,
+			},
+			{
+				Content:      strReader("PDF\u0000"),
+				ContentType:  "application/pdf",
+				ContentID:    "foobarbaz",
+				Name:         "invoice.pdf",
+				IsAttachment: true,
+			},
+		},
+		want: `MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=".BFtzyG5P+V/2YqXu."
+
+--.BFtzyG5P+V/2YqXu.
+Content-Type: multipart/alternative; boundary=".AZT9wvov/MBB0/8S."
+
+--.AZT9wvov/MBB0/8S.
+Content-Disposition: inline
+Content-Type: text/plain; charset="UTF-8"
+
+Hello, World!
+--.AZT9wvov/MBB0/8S.
+Content-Disposition: inline
+Content-Type: text/html; charset="UTF-8"
+
+<b>Hello</b>, World!
+--.AZT9wvov/MBB0/8S.--
+
+--.BFtzyG5P+V/2YqXu.
+Content-Disposition: attachment; filename="invoice.pdf"
+Content-Id: <foobarbaz>
+Content-Transfer-Encoding: base64
+Content-Type: application/pdf; name="invoice.pdf"
+
+UERGAA==
+--.BFtzyG5P+V/2YqXu.--
 `,
 	},
 }

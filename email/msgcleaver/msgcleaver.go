@@ -83,15 +83,18 @@ func cleave(filer *iox.Filer, src io.Reader) (msgPtr *email.Msg, err error) {
 			r = quotedprintable.NewReader(r)
 		}
 
+		isAttachment := false
 		fileName := ""
-		if _, dispositionParams, err := mime.ParseMediaType(string(hdr.Get("Content-Disposition"))); err == nil {
-			fileName = dispositionParams["filename"]
+		if d, dparams, err := mime.ParseMediaType(string(hdr.Get("Content-Disposition"))); err == nil {
+			fileName = dparams["filename"]
+			if strings.EqualFold(d, "attachment") {
+				isAttachment = true
+			}
 		}
 		if fileName == "" {
 			fileName = params["name"]
 		}
 
-		isAttachment := false
 		isBody := false
 		switch parentMediaType {
 		case "":
@@ -102,9 +105,12 @@ func cleave(filer *iox.Filer, src io.Reader) (msgPtr *email.Msg, err error) {
 			isBody = true
 		case "multipart/mixed":
 			// TODO this is wrong.
-			// If for any localPartNum Content-Disposition: inline, then isBody = true, isAttachment = false
-			isAttachment = localPartNum > 0
+			// If for any localPartNum Content-Disposition: inline, then isBody = true
 			isBody = localPartNum == 0
+			if len(hdr.Get("Content-Disposition")) == 0 {
+				// We have to decide if this is an attachment.
+				isAttachment = localPartNum > 0
+			}
 		case "multipart/related":
 			isBody = localPartNum == 0
 		}

@@ -149,7 +149,7 @@ func pullParts(msg *email.Msg) (body, related, attachments []*email.Part, err er
 		if p.Name == "" {
 			p.Name = "attachment-" + strconv.Itoa(i)
 		}
-		if p.ContentID == "" {
+		if p.IsAttachment {
 			attachments = append(attachments, p)
 		} else {
 			related = append(related, p)
@@ -192,20 +192,24 @@ func buildPartHeader(part *email.Part) (hdr PartHeader, err error) {
 		hdr.ContentType += `; charset="UTF-8"`
 	}
 
+	if part.IsAttachment {
+		hdr.ContentDisposition = "attachment"
+	} else {
+		hdr.ContentDisposition = "inline"
+	}
+
 	if part.ContentID != "" {
 		if strings.Contains(part.ContentID, `"`) {
 			// TODO: encode any '"' character in the name
 			return PartHeader{}, fmt.Errorf("part %d header: Content-ID %q includes quotes", part.PartNum, part.ContentID)
 		}
-
 		hdr.ContentID = "<" + part.ContentID + ">"
-		fileName := part.Name
-		if fileName == "" {
-			fileName = part.ContentID
-		}
-		hdr.ContentDisposition = `inline; filename="` + fileName + `"`
-	} else if part.Name != "" {
-		name := part.Name
+	}
+	name := part.Name
+	if name == "" {
+		name = part.ContentID
+	}
+	if name != "" {
 		if strings.Contains(name, `"`) {
 			// TODO: encode any '"' character in the name
 			return PartHeader{}, fmt.Errorf("part %d header: attachment name %q includes quotes", part.PartNum, name)
@@ -213,9 +217,7 @@ func buildPartHeader(part *email.Part) (hdr PartHeader, err error) {
 		if hdr.ContentType != "" {
 			hdr.ContentType += `; name="` + name + `"`
 		}
-		hdr.ContentDisposition = `attachment; filename="` + name + `"`
-	} else {
-		hdr.ContentDisposition = "inline"
+		hdr.ContentDisposition += `; filename="` + name + `"`
 	}
 
 	// Determine Content-Transfer-Encoding.
