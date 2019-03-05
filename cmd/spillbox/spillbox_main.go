@@ -22,6 +22,8 @@ import (
 
 	"crawshaw.io/iox"
 	"crawshaw.io/sqlite/sqlitex"
+	"spilled.ink/email/msgbuilder"
+	"spilled.ink/email/msgcleaver"
 	"spilled.ink/spilldb"
 	"spilled.ink/spilldb/boxmgmt"
 )
@@ -46,6 +48,15 @@ func main() {
 
 	ctx := context.Background()
 	filer = iox.NewFiler(0)
+
+	switch flag.Arg(0) {
+	case "msg":
+		if err := cmdMsg(flag.Args()[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "%s msg: %v\n", os.Args[0], err)
+			exit(1)
+		}
+		return
+	}
 
 	// TODO: print a message if we are creating dbdir
 	var err error
@@ -224,6 +235,25 @@ func findUserID(username string) (int64, error) {
 	userID := stmt.GetInt64("UserID")
 	stmt.Reset()
 	return userID, nil
+}
+
+func cmdMsg(args []string) error {
+	// TODO: add flags
+	var src io.Reader
+	var dst io.Writer
+	if len(args) == 0 {
+		src = os.Stdin
+		dst = os.Stdout
+	} else {
+		return fmt.Errorf("TODO: args to msg")
+	}
+
+	msg, err := msgcleaver.Cleave(filer, src)
+	if err != nil {
+		return err
+	}
+	builder := msgbuilder.Builder{Filer: filer}
+	return builder.Build(dst, msg)
 }
 
 func exit(code int) {
