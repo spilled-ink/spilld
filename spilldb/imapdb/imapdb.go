@@ -78,7 +78,10 @@ type backend struct {
 
 func (b *backend) Login(c *imapserver.Conn, username, password []byte) (int64, imap.Session, error) {
 	ctx := c.Context
-	remoteAddr := c.RemoteAddr().String()
+	remoteAddr := ""
+	if addr := c.RemoteAddr(); addr != nil {
+		remoteAddr = addr.String()
+	}
 	userID, err := b.auth.AuthDevice(ctx, remoteAddr, string(username), password)
 	if err == db.ErrBadCredentials {
 		return 0, nil, imapserver.ErrBadCredentials

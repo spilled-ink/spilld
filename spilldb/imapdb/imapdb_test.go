@@ -107,8 +107,8 @@ func (ds *dataStore) AddUser(username, password []byte) (err error) {
 	defer ds.dbpool.Put(conn)
 
 	userID, err := db.AddUser(conn, db.UserDetails{
-		Username: string(username),
-		Password: "agenericpassword",
+		EmailAddr: string(username),
+		Password:  "agenericpassword",
 	})
 	pwd := strings.ToUpper(string(password))
 	if _, err := db.AddDevice(conn, userID, "testdevice", pwd); err != nil {
