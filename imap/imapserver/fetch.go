@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net/mail"
 	"sort"
 	"strings"
-	"net/mail"
 
 	"spilled.ink/email"
 	"spilled.ink/email/msgbuilder"
@@ -173,13 +173,21 @@ func (c *Conn) writeAddresses(addrBytes []byte) {
 	addrs, err := mail.ParseAddressList(string(addrBytes))
 	if err != nil {
 		c.writef("NIL")
-		c.Logf("cannot write addresses %q: %v", addrBytes, err)
+		c.server.Logf("%s", logMsg{
+			What: "FETCH",
+			ID:   c.ID,
+			Err:  fmt.Errorf("cannot write address %q: %v", addrBytes, err),
+		}.String())
 		return
 	}
 	for _, addr := range addrs {
 		i := strings.LastIndexByte(addr.Address, '@')
 		if i == -1 {
-			c.Logf("cannot write address: %q", addr.Address)
+			c.server.Logf("%s", logMsg{
+				What: "FETCH",
+				ID:   c.ID,
+				Err:  fmt.Errorf("cannot write address %q", addr.Address),
+			}.String())
 			continue
 		}
 		mailboxName, hostName := addr.Address[:i], addr.Address[i+1:]
@@ -201,7 +209,12 @@ func (c *Conn) writeAddresses(addrBytes []byte) {
 func (c *Conn) writeBodyStructure(m imap.Message) {
 	node, err := msgbuilder.BuildTree(m.Msg())
 	if err != nil {
-		c.Logf("BODYSTRUCTURE: %v", err)
+		c.server.Logf("%s", logMsg{
+			What: "BODYSTRUCTURE",
+			ID:   c.ID,
+			Err:  err,
+		}.String())
+
 		return
 	}
 	c.writef("BODYSTRUCTURE (")
@@ -216,7 +229,12 @@ func (c *Conn) writeBodyStructurePart(node *msgbuilder.TreeNode) {
 	}
 	mediaType, ctParams, err := mime.ParseMediaType(node.Header.ContentType)
 	if err != nil {
-		c.Logf("BODYSTRUCTURE part %d: %v", partNum, err)
+		c.server.Logf("%s", logMsg{
+			What:    "BODYSTRUCTURE",
+			ID:      c.ID,
+			PartNum: partNum,
+			Err:     err,
+		}.String())
 		return
 	}
 	var ctParamKeys []string
@@ -226,7 +244,12 @@ func (c *Conn) writeBodyStructurePart(node *msgbuilder.TreeNode) {
 	sort.Strings(ctParamKeys)
 	var bodyType, bodySubtype string
 	if i := strings.IndexByte(mediaType, '/'); i == -1 {
-		c.Logf("BODYSTRUCTURE part %d bad mediatype: %s", partNum, mediaType)
+		c.server.Logf("%s", logMsg{
+			What:    "BODYSTRUCTURE",
+			ID:      c.ID,
+			PartNum: partNum,
+			Err:     fmt.Errorf("bad mediatype: %s", mediaType),
+		}.String())
 		return
 	} else {
 		bodyType, bodySubtype = mediaType[:i], mediaType[i+1:]
@@ -319,6 +342,20 @@ func (c *Conn) loadParts(m imap.Message, node *msgbuilder.TreeNode) error {
 	return nil
 }
 
+func (c *Conn) logFetchErr(what string, msg *email.Msg, partNum int, err error) {
+	var msgID email.MsgID
+	if msg != nil {
+		msgID = msg.MsgID
+	}
+	c.server.Logf("%s", logMsg{
+		What:    "FETCH " + what,
+		ID:      c.ID,
+		MsgID:   msgID,
+		PartNum: partNum,
+		Err:     err,
+	}.String())
+}
+
 func (c *Conn) writeBody(m imap.Message, item *imapparser.FetchItem) {
 	// item.Type == imapparser.FetchBody
 	// BODY[<section>]<<origin octet>>
@@ -328,14 +365,14 @@ func (c *Conn) writeBody(m imap.Message, item *imapparser.FetchItem) {
 
 	node, err := msgbuilder.BuildTree(m.Msg())
 	if err != nil {
-		c.Logf("BODY %v: %v", m.Msg().MsgID, err)
+		c.logFetchErr("BODY", m.Msg(), 0, err)
 		return
 	}
 	if len(item.Section.Path) > 0 {
 		// BODY[1.2.3]
 		node = findPath(node, item.Section.Path)
 		if node == nil {
-			c.Logf("BODY %v: cannot find path %v", m.Msg().MsgID, item.Section.Path)
+			c.logFetchErr("BODY", m.Msg(), 0, fmt.Errorf("cannot find path %v", item.Section.Path))
 			return
 		}
 	}
@@ -345,27 +382,27 @@ func (c *Conn) writeBody(m imap.Message, item *imapparser.FetchItem) {
 		if len(item.Section.Path) > 0 {
 			// BODY[1.2.3]
 			if node.Part == nil {
-				c.Logf("BODY %v: path %v has no part", m.Msg().MsgID, item.Section.Path)
+				c.logFetchErr("BODY", m.Msg(), 0, fmt.Errorf("path %v has no part", item.Section.Path))
 				return
 			}
 			if err := m.LoadPart(node.Part.PartNum); err != nil {
-				c.Logf("BODY %v: %d: ", node.Part.PartNum, err)
+				c.logFetchErr("BODY", m.Msg(), node.Part.PartNum, err)
 				return
 			}
 			if err := msgbuilder.EncodeContent(buf, node.Header, node.Part); err != nil {
-				c.Logf("BODY %v: encode: %v", node.Part.PartNum, err)
+				c.logFetchErr("BODY", m.Msg(), node.Part.PartNum, err)
 				return
 			}
 		} else {
 			// BODY[]
 			if err := c.loadParts(m, node); err != nil {
-				c.Logf("BODY[] %v", err)
+				c.logFetchErr("BODY[]", m.Msg(), 0, err)
 				return
 			}
 			builder := &msgbuilder.Builder{Filer: c.server.Filer}
 			var err error
 			if err = builder.Build(buf, m.Msg()); err != nil {
-				c.Logf("BODY[]: %v", err)
+				c.logFetchErr("BODY[]", m.Msg(), 0, err)
 				return
 			}
 		}
@@ -382,13 +419,13 @@ func (c *Conn) writeBody(m imap.Message, item *imapparser.FetchItem) {
 			hdr = m.Msg().Headers
 		}
 		if _, err := hdr.Encode(buf); err != nil {
-			c.Logf("HEADER: %v", err)
+			c.logFetchErr("HEADER", m.Msg(), 0, err)
 			return
 		}
 	case "HEADER.FIELDS.NOT":
 		if len(item.Section.Path) > 0 {
 			// TODO: use node.Header
-			c.Logf("HEADER.FIELDS.NOT TODO part")
+			c.logFetchErr("HEADER.FIELDS.NOT", nil, 0, fmt.Errorf("TODO path"))
 			return
 		}
 
@@ -406,13 +443,13 @@ func (c *Conn) writeBody(m imap.Message, item *imapparser.FetchItem) {
 			hdr.Add(entry.Key, entry.Value)
 		}
 		if _, err := hdr.Encode(buf); err != nil {
-			c.Logf("HEADER.FIELDS.NOT: %v", err)
+			c.logFetchErr("HEADER.FIELDS.NOT", m.Msg(), 0, err)
 			return
 		}
 	case "HEADER.FIELDS":
 		if len(item.Section.Path) > 0 {
 			// TODO: use node.Header
-			c.Logf("HEADER.FIELDS TODO part")
+			c.logFetchErr("HEADER.FIELDS", nil, 0, fmt.Errorf("TODO path"))
 			return
 		}
 
@@ -425,22 +462,22 @@ func (c *Conn) writeBody(m imap.Message, item *imapparser.FetchItem) {
 			}
 		}
 		if _, err := hdr.Encode(buf); err != nil {
-			c.Logf("HEADER.FIELDS: %v", err)
+			c.logFetchErr("HEADER.FIELDS", m.Msg(), 0, err)
 			return
 		}
 	case "TEXT":
 		// like BODY[] but without any headers
 		if err := c.loadParts(m, node); err != nil {
-			c.Logf("TEXT: %v", err)
+			c.logFetchErr("TEXT", m.Msg(), 0, err)
 			return
 		}
 		builder := &msgbuilder.Builder{Filer: c.server.Filer}
 		if err := builder.WriteNode(buf, node); err != nil {
-			c.Logf("TEXT: %v", err)
+			c.logFetchErr("TEXT", m.Msg(), 0, err)
 			return
 		}
 	default:
-		c.Logf("FETCH BODY %v unknown section: %q", m.Msg().MsgID, item.Section.Name)
+		c.logFetchErr("BODY", m.Msg(), 0, fmt.Errorf("unknown section: %q", item.Section.Name))
 		return
 	}
 
@@ -453,13 +490,13 @@ func (c *Conn) writeBody(m imap.Message, item *imapparser.FetchItem) {
 		}
 		if !seen {
 			if err := m.SetSeen(); err != nil {
-				c.Logf("FETCH BODY failed to set Seen flag on %s", m.Msg().MsgID)
+				c.logFetchErr("BODY", m.Msg(), 0, fmt.Errorf("failed to set Seen flag"))
 			}
 		}
 	}
 
 	if _, err := buf.Seek(0, 0); err != nil {
-		c.Logf("BODY: buf seek: %v", err)
+		c.logFetchErr("BODY", m.Msg(), 0, fmt.Errorf("buf seek: %v", err))
 		return
 	}
 

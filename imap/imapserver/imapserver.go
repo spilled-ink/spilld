@@ -121,7 +121,10 @@ func (n *notifier) Notify(userID int64, mailboxID int64, mailboxName string, dev
 			if update == nil {
 				info, err := c.mailbox.Info()
 				if err != nil {
-					n.server.Logf("Notify Info failed: %v", err)
+					n.server.Logf("%s", logMsg{
+						What: "notify info",
+						Err:  err,
+					}.String())
 					return
 				}
 				update = &idleUpdate{
@@ -203,7 +206,10 @@ acceptLoop:
 				if tempDelay > 1*time.Second {
 					tempDelay = 1 * time.Second
 				}
-				server.Logf("accept: %v", err)
+				server.Logf("%s", logMsg{
+					What: "accept loop",
+					Err:  err,
+				}.String())
 				time.Sleep(tempDelay)
 				continue
 			}
@@ -267,18 +273,17 @@ func (server *Server) getUser(userID int64) *user {
 func (server *Server) serveSession(netConn net.Conn) {
 	sessionID, err := server.genSessionID()
 	if err != nil {
-		server.Logf("generating session ID failed: %v", err)
+		server.Logf("%s", logMsg{
+			What: "generate session ID",
+			Err:  err,
+		}.String())
 		netConn.Close()
 		return
 	}
 
 	netConn = tls.Server(netConn, server.TLSConfig)
 	c := &Conn{
-		ID: sessionID,
-		Logf: func(format string, v ...interface{}) {
-			server.Logf("session("+sessionID+"): "+format, v...)
-		},
-
+		ID:      sessionID,
 		server:  server,
 		netConn: netConn,
 		br:      bufio.NewReader(netConn),
@@ -306,7 +311,6 @@ func (server *Server) serveSession(netConn net.Conn) {
 type Conn struct {
 	Context context.Context
 	ID      string
-	Logf    func(format string, v ...interface{})
 
 	userID    int64
 	session   imap.Session
@@ -441,7 +445,7 @@ func (c *Conn) writeString(s string) {
 	b := make([]byte, 0, 128)
 	b, err := utf7mod.AppendEncode(b, []byte(s))
 	if err != nil {
-		c.Logf("cannot encode string %q", s)
+		panic(fmt.Sprintf("utf7: cannot encode string %q", s))
 	}
 
 	switch strTypeVal {
@@ -465,8 +469,12 @@ func (c *Conn) writeLiteral(r io.Reader, n int64) {
 	if c.debugW != nil {
 		c.debugW.server.literalDataFollows(int(n))
 	}
-	if n2, err := io.CopyN(c.bw, r, n); err != nil {
-		c.Logf("writeLiteral(n=%d) failed: %v (n2=%d)", n, err, n2)
+	if _, err := io.CopyN(c.bw, r, n); err != nil {
+		c.server.Logf("%s", logMsg{
+			What: "writeLiteral",
+			ID:   c.ID,
+			Err:  err,
+		})
 	}
 }
 
@@ -565,7 +573,11 @@ func (c *Conn) serve() {
 		c.close()
 		if c.debugFile != nil {
 			if err := c.debugFile.Close(); err != nil {
-				c.Logf("%v", err)
+				c.server.Logf("%s", logMsg{
+					What: "debug file close",
+					ID:   c.ID,
+					Err:  err,
+				})
 			}
 		}
 
@@ -581,7 +593,11 @@ func (c *Conn) serve() {
 		c.server.connsMu.Unlock()
 
 		if r := recover(); r != nil {
-			c.Logf("panic: %s", string(debug.Stack()))
+			c.server.Logf("%s", logMsg{
+				What: "panic",
+				ID:   c.ID,
+				Err:  errors.New(string(debug.Stack())),
+			}.String())
 			panic(r)
 		}
 	}()
@@ -626,6 +642,7 @@ const (
 
 func (c *Conn) serveParseCmd() bool {
 	origCtx := c.Context
+	start := time.Now()
 	ctx, task := trace.NewTask(c.Context, "imap-request")
 	c.Context = ctx
 	defer func() {
@@ -647,7 +664,11 @@ func (c *Conn) serveParseCmd() bool {
 		return true
 	} else if _, isParseError := err.(imapparser.ParseError); isParseError {
 		c.bwMu.Lock()
-		c.Logf("parse error: %v", err)
+		c.server.Logf("%s", logMsg{
+			What: "command parse error",
+			ID:   c.ID,
+			Err:  err,
+		}.String())
 		trace.Logf(c.Context, "parse_error", "%v", err)
 		fmt.Fprintf(c.bw, "* BAD %v\r\n", err)
 		c.flush()
@@ -655,7 +676,11 @@ func (c *Conn) serveParseCmd() bool {
 		return true
 	} else if err != nil {
 		c.bwMu.Lock()
-		c.Logf("conn error: %v", err)
+		c.server.Logf("%s", logMsg{
+			What: "conn error",
+			ID:   c.ID,
+			Err:  err,
+		}.String())
 		trace.Logf(c.Context, "conn_error", "%v", err)
 		fmt.Fprintf(c.bw, "* BAD connection error\r\n")
 		c.flush()
@@ -666,6 +691,13 @@ func (c *Conn) serveParseCmd() bool {
 	// TODO: for long-lived connections we want a very long (possibly infinite)
 	//       read deadline. However we could (and should?) have a short write deadline.
 	c.serveCmd()
+	// TODO: extract BAD response from serveCmd and log it here
+	c.server.Logf("%s", logMsg{
+		What:     c.p.Command.Name,
+		When:     start,
+		Duration: time.Since(start),
+		ID:       c.ID,
+	}.String())
 	return true
 }
 
@@ -761,7 +793,11 @@ func (c *Conn) serveCmd() {
 			}
 			fmt.Fprintf(buf, "%s", param)
 		}
-		c.Logf("client-id: [%s]", buf.String())
+		c.server.Logf("%s", logMsg{
+			What: "ID",
+			ID:   c.ID,
+			Data: buf.String(),
+		})
 		c.writef(`* ID ("name" "spilld" "vendor" "Spilled Ink"`)
 		c.writef(` "support-url" "https://github.com/spilledink"`)
 		c.writef(` "version" %q`, c.server.Version)
@@ -1012,7 +1048,11 @@ func (c *Conn) cmdSelect() {
 		c.mailbox = nil
 		c.p.Mode = imapparser.ModeAuth
 		c.respondln("NO SELECT internal error")
-		c.Logf("SELECT: %v", err)
+		c.server.Logf("%s", logMsg{
+			What: "SELECT info",
+			ID:   c.ID,
+			Err:  err,
+		}.String())
 		return
 	}
 
@@ -1081,7 +1121,11 @@ func (c *Conn) cmdStatus() {
 		case imapparser.StatusHighestModSeq:
 			c.writef("HIGHESTMODSEQ %d", info.HighestModSequence)
 		default:
-			c.Logf("STATUS: unknown item: %v", item)
+			c.server.Logf("%s", logMsg{
+				What: "STATUS unknown item",
+				ID:   c.ID,
+				Data: fmt.Sprintf("%v", item),
+			}.String())
 		}
 	}
 	c.writef(")\r\n")
@@ -1173,7 +1217,11 @@ func (c *Conn) setCondStore() {
 	c.condstore = true
 	modSeq, err := c.mailbox.HighestModSequence()
 	if err != nil {
-		c.Logf("STORE: failed to get HIGHESTMODSEQ: %v", err)
+		c.server.Logf("%s", logMsg{
+			What: "STORE HIGHESTMODSEQ",
+			ID:   c.ID,
+			Err:  err,
+		}.String())
 	} else {
 		c.writef("* OK [HIGHESTMODSEQ %d]\r\n", modSeq)
 	}
