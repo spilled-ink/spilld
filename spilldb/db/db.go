@@ -281,6 +281,7 @@ type Log struct {
 	What     string
 	When     time.Time
 	Duration time.Duration
+	UserID   int64
 	Err      error
 	Data     map[string]interface{}
 }
@@ -289,15 +290,24 @@ func (l Log) String() string {
 	buf := new(strings.Builder)
 	fmt.Fprintf(buf, `{"where": %q, "what": %q, `, l.Where, l.What)
 
+	if l.When.IsZero() {
+		l.When = time.Now()
+		fmt.Fprintf(buf, `, "missing_when": true`)
+	}
 	buf.WriteString(`"when": "`)
 	buf.Write(l.When.AppendFormat(make([]byte, 0, 64), time.RFC3339Nano))
 	buf.WriteString(`"`)
 
-	fmt.Fprintf(buf, `, "duration": "%s"`, l.Duration)
-
+	if l.Duration != 0 {
+		fmt.Fprintf(buf, `, "duration": "%s"`, l.Duration)
+	}
+	if l.UserID != 0 {
+		fmt.Fprintf(buf, `, "user_id": %d`, l.UserID)
+	}
 	if l.Err != nil {
 		fmt.Fprintf(buf, `, "err": %q`, l.Err.Error())
 	}
+
 	if len(l.Data) > 0 {
 		b, err := json.Marshal(l.Data)
 		if err != nil {

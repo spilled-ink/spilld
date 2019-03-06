@@ -99,7 +99,7 @@ func (a *Authenticator) AuthDevice(ctx context.Context, remoteAddr, username str
 		log.Err = errors.New("bad password")
 		return 0, ErrBadCredentials
 	}
-	log.Data["user_id"] = userID
+	log.UserID = userID
 
 	stmt = conn.Prep(`UPDATE Devices
 		SET LastAccessTime = $time, LastAccessAddr = $addr
