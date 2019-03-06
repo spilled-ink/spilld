@@ -121,10 +121,7 @@ func (n *notifier) Notify(userID int64, mailboxID int64, mailboxName string, dev
 			if update == nil {
 				info, err := c.mailbox.Info()
 				if err != nil {
-					n.server.Logf("%s", logMsg{
-						What: "notify info",
-						Err:  err,
-					}.String())
+					c.log(logMsg{What: "notify mailbox info", Err: err})
 					return
 				}
 				update = &idleUpdate{
@@ -545,6 +542,11 @@ func (srcConn *Conn) sendIdleUpdate(mailboxID int64, update idleUpdate) {
 	}
 }
 
+func (c *Conn) log(l logMsg) {
+	l.ID = c.ID
+	c.server.Logf("%s", l.String())
+}
+
 type idleUpdateType int
 
 const (
@@ -694,13 +696,12 @@ func (c *Conn) serveParseCmd() bool {
 	// TODO: for long-lived connections we want a very long (possibly infinite)
 	//       read deadline. However we could (and should?) have a short write deadline.
 	response := c.serveCmd()
-	c.server.Logf("%s", logMsg{
+	c.log(logMsg{
 		What:     c.p.Command.Name,
 		When:     start,
 		Duration: time.Since(start),
-		ID:       c.ID,
 		Data:     response,
-	}.String())
+	})
 	return true
 }
 
@@ -861,7 +862,9 @@ func (c *Conn) serveCmd() string {
 		if err := c.mailbox.Expunge(nil, fn); err != nil {
 			c.writef("* BAD CLOSE server expunge error: %v\r\n", err)
 		} else if totalCountChanged {
-			if info, err := c.mailbox.Info(); err == nil {
+			if info, err := c.mailbox.Info(); err != nil {
+				c.log(logMsg{What: "CLOSE mailbox info", Err: err})
+			} else {
 				c.sendIdleUpdate(c.mailbox.ID(), idleUpdate{
 					typ:      idleTotalCount,
 					value:    info.NumMessages,
@@ -936,7 +939,9 @@ func (c *Conn) cmdAppend() {
 		c.respondln("NO APPEND %v", err)
 		return
 	}
-	if info, err := mailbox.Info(); err == nil {
+	if info, err := mailbox.Info(); err != nil {
+		c.log(logMsg{What: "APPEND mailbox info", Err: err})
+	} else {
 		c.sendIdleUpdate(mailbox.ID(), idleUpdate{
 			typ:   idleTotalCount,
 			value: info.NumMessages,
@@ -965,7 +970,9 @@ func (c *Conn) cmdExpunge() {
 		c.respondln("NO EXPUNGE %v", err)
 		return
 	}
-	if info, err := c.mailbox.Info(); err == nil {
+	if info, err := c.mailbox.Info(); err != nil {
+		c.log(logMsg{What: "EXPUNGE mailbox info", Err: err})
+	} else {
 		c.sendIdleUpdate(c.mailbox.ID(), idleUpdate{
 			typ:   idleTotalCount,
 			value: info.NumMessages,
@@ -1054,11 +1061,7 @@ func (c *Conn) cmdSelect() {
 		c.mailbox = nil
 		c.p.Mode = imapparser.ModeAuth
 		c.respondln("NO SELECT internal error")
-		c.server.Logf("%s", logMsg{
-			What: "SELECT info",
-			ID:   c.ID,
-			Err:  err,
-		}.String())
+		c.log(logMsg{What: "SELECT mailbox info", Err: err})
 		return
 	}
 
@@ -1170,14 +1173,10 @@ func (c *Conn) cmdCopyOrMove() {
 			c.respondln("BAD MOVE %v", err)
 			return
 		}
-		if info, err := c.mailbox.Info(); err == nil {
+		if info, err := c.mailbox.Info(); err != nil {
+			c.log(logMsg{What: cmd.Name + " mailbox info", Err: err})
+		} else {
 			c.sendIdleUpdate(c.mailbox.ID(), idleUpdate{
-				typ:   idleTotalCount,
-				value: info.NumMessages,
-			})
-		}
-		if info, err := dst.Info(); err == nil {
-			c.sendIdleUpdate(dst.ID(), idleUpdate{
 				typ:   idleTotalCount,
 				value: info.NumMessages,
 			})
@@ -1191,12 +1190,14 @@ func (c *Conn) cmdCopyOrMove() {
 			c.respondln("BAD COPY %v", err)
 			return
 		}
-		if info, err := dst.Info(); err == nil {
-			c.sendIdleUpdate(dst.ID(), idleUpdate{
-				typ:   idleTotalCount,
-				value: info.NumMessages,
-			})
-		}
+	}
+	if info, err := dst.Info(); err != nil {
+		c.log(logMsg{What: cmd.Name + " dst mailbox info", Err: err})
+	} else {
+		c.sendIdleUpdate(dst.ID(), idleUpdate{
+			typ:   idleTotalCount,
+			value: info.NumMessages,
+		})
 	}
 
 	if len(srcUIDs) > 0 {
