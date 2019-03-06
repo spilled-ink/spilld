@@ -328,6 +328,7 @@ type Conn struct {
 
 	bwMu          sync.Mutex
 	bw            *bufio.Writer
+	respondBuf    bytes.Buffer
 	compressing   bool // COMPRESS active
 	compressFlush func() error
 	idleStarted   bool // c.mailbox.Idle has been called
@@ -375,7 +376,9 @@ func (c *Conn) writef(format string, v ...interface{}) {
 func (c *Conn) respondln(format string, v ...interface{}) {
 	c.bw.Write(c.p.Command.Tag)
 	c.bw.WriteByte(' ')
-	fmt.Fprintf(c.bw, format, v...)
+	c.respondBuf.Reset()
+	fmt.Fprintf(&c.respondBuf, format, v...)
+	c.bw.Write(c.respondBuf.Bytes())
 	c.bw.WriteByte('\r')
 	c.bw.WriteByte('\n')
 	if err := c.flush(); err != nil {
@@ -690,21 +693,22 @@ func (c *Conn) serveParseCmd() bool {
 	trace.Logf(c.Context, "imap-request-cmd", "%v", c.p.Command)
 	// TODO: for long-lived connections we want a very long (possibly infinite)
 	//       read deadline. However we could (and should?) have a short write deadline.
-	c.serveCmd()
-	// TODO: extract BAD response from serveCmd and log it here
+	response := c.serveCmd()
 	c.server.Logf("%s", logMsg{
 		What:     c.p.Command.Name,
 		When:     start,
 		Duration: time.Since(start),
 		ID:       c.ID,
+		Data:     response,
 	}.String())
 	return true
 }
 
-func (c *Conn) serveCmd() {
+func (c *Conn) serveCmd() string {
 	c.bwMu.Lock()
 	defer c.bwMu.Unlock()
 
+	c.respondBuf.Reset()
 	c.writeUpdates()
 
 	cmd := &c.p.Command
@@ -720,7 +724,7 @@ func (c *Conn) serveCmd() {
 	case "COMPRESS":
 		if c.compressing {
 			c.respondln("NO [COMPRESSIONACTIVE] DEFLATE active")
-			return
+			return c.respondBuf.String()
 		}
 		c.compressing = true
 
@@ -741,15 +745,15 @@ func (c *Conn) serveCmd() {
 	case "LOGIN", "AUTHENTICATE":
 		if c.p.Mode != imapparser.ModeNonAuth {
 			c.respondln("BAD wrong mode")
-			return
+			return c.respondBuf.String()
 		}
 		userID, session, err := c.server.DataStore.Login(c, cmd.Auth.Username, cmd.Auth.Password)
 		if err == ErrBadCredentials {
 			c.respondln("NO bad credenttials")
-			return
+			return c.respondBuf.String()
 		} else if err != nil {
 			c.respondln("BAD %v", err)
-			return
+			return c.respondBuf.String()
 		}
 		trace.Logf(c.Context, "username", "%s", cmd.Auth.Username)
 		c.p.Mode = imapparser.ModeAuth
@@ -880,6 +884,8 @@ func (c *Conn) serveCmd() {
 	case "XAPPLEPUSHSERVICE":
 		c.cmdXApplePushService()
 	}
+
+	return c.respondBuf.String()
 }
 
 func (c *Conn) closeMailbox() {
