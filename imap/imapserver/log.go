@@ -13,6 +13,7 @@ type logMsg struct {
 	When     time.Time
 	Duration time.Duration
 	ID       string
+	UserID   int64
 	MsgID    email.MsgID
 	PartNum  int
 	Err      error
@@ -37,6 +38,9 @@ func (l logMsg) String() string {
 	}
 	if l.ID != "" {
 		fmt.Fprintf(buf, `, "session_id": "%s"`, l.ID)
+	}
+	if l.UserID != 0 {
+		fmt.Fprintf(buf, `, "user_id": "%d"`, l.UserID)
 	}
 	if l.MsgID != 0 {
 		fmt.Fprintf(buf, `, "msg_id": "%d"`, l.MsgID)

@@ -543,6 +543,7 @@ func (srcConn *Conn) sendIdleUpdate(mailboxID int64, update idleUpdate) {
 }
 
 func (c *Conn) log(l logMsg) {
+	l.UserID = c.userID
 	l.ID = c.ID
 	c.server.Logf("%s", l.String())
 }
