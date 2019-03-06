@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"spilled.ink/spilldb/db"
-
 	"crawshaw.io/iox"
 	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
@@ -27,6 +25,7 @@ import (
 	"spilled.ink/imap/imapparser"
 	"spilled.ink/imap/imapserver"
 	"spilled.ink/spilldb/boxmgmt"
+	"spilled.ink/spilldb/db"
 	"spilled.ink/spilldb/spillbox"
 )
 
@@ -51,7 +50,12 @@ func New(tlsConfig *tls.Config, dbpool *sqlitex.Pool, filer *iox.Filer, boxmgmt 
 		name := filepath.Join(debugDir, "imap-"+sessionID+".txt")
 		f, err := os.Create(name)
 		if err != nil {
-			logf("failed to create debug file: %v", err)
+			logf("%s", db.Log{
+				What:  "imapdb",
+				Where: "debug-file-create",
+				When:  time.Now(),
+				Err:   err,
+			}.String())
 			return nil
 		}
 		return f
@@ -94,16 +98,13 @@ func (b *backend) Login(c *imapserver.Conn, username, password []byte) (int64, i
 		return 0, nil, err
 	}
 
-	logUserPrefix := fmt.Sprintf("user%d: ", userID)
 	s := &session{
-		c:      c,
-		userID: userID,
-		name:   string(username),
-		user:   user,
-		filer:  b.filer,
-		logf: func(format string, v ...interface{}) {
-			b.logf(logUserPrefix+format, v...)
-		},
+		c:         c,
+		userID:    userID,
+		name:      string(username),
+		user:      user,
+		filer:     b.filer,
+		logf:      b.logf,
 		mailboxes: make(map[int64]*mailbox),
 	}
 
@@ -127,10 +128,6 @@ type session struct {
 }
 
 func (s *session) Mailboxes() (mailboxes []imap.MailboxSummary, err error) {
-	defer func() {
-		s.logf("Mailboxes len(mailboxes)=%d", len(mailboxes))
-	}()
-
 	// TODO: subscribed
 	ctx := s.c.Context
 	conn := s.user.Box.PoolRO.Get(ctx)
@@ -143,7 +140,6 @@ func (s *session) Mailboxes() (mailboxes []imap.MailboxSummary, err error) {
 		FROM Mailboxes WHERE Name IS NOT NULL ORDER BY Name;`)
 	for {
 		if hasNext, err := stmt.Step(); err != nil {
-			s.logf("Mailboxes: %v", err)
 			return nil, err
 		} else if !hasNext {
 			break
@@ -177,7 +173,6 @@ func (s *session) Mailbox(name []byte) (imap.Mailbox, error) {
 	stmt := conn.Prep("SELECT MailboxID, Name, Subscribed FROM Mailboxes WHERE Name = $name;")
 	stmt.SetBytes("$name", name)
 	if hasNext, err := stmt.Step(); err != nil {
-		s.logf("Mailbox: %v", err)
 		return nil, err
 	} else if !hasNext {
 		return nil, fmt.Errorf("mailbox not found: %s", name)
@@ -243,7 +238,6 @@ func (s *session) RegisterPushDevice(mailbox string, device imapparser.ApplePush
 }
 
 func (s *session) Close() {
-	s.logf("Close")
 }
 
 type mailbox struct {
@@ -279,8 +273,7 @@ func (m *mailbox) Info() (info imap.MailboxInfo, err error) {
 	stmt.SetInt64("$id", m.mailboxID)
 	msgCount, err := sqlitex.ResultInt(stmt)
 	if err != nil {
-		m.s.logf("Info: StatusMessage: %v", err)
-		return imap.MailboxInfo{}, err
+		return imap.MailboxInfo{}, fmt.Errorf("imapdb: mailbox info: %v", err)
 	}
 	info.NumMessages = uint32(msgCount)
 
@@ -410,7 +403,7 @@ func (m *mailbox) Search(op *imapparser.SearchOp, fn func(imap.MessageSummary)) 
 			break
 		}
 
-		mMsg := &matchMessage{logf: m.s.logf, conn: conn, stmt: stmt}
+		mMsg := &matchMessage{logf: m.s.logf, userID: m.s.userID, conn: conn, stmt: stmt}
 		if !matcher.Match(mMsg) {
 			continue
 		}
@@ -424,11 +417,12 @@ func (m *mailbox) Search(op *imapparser.SearchOp, fn func(imap.MessageSummary)) 
 }
 
 type matchMessage struct {
-	logf  func(format string, v ...interface{})
-	conn  *sqlite.Conn
-	stmt  *sqlite.Stmt
-	flags map[string]int // decoded from JSON: {"flag": 1}
-	hdrs  *email.Header
+	logf   func(format string, v ...interface{})
+	userID int64
+	conn   *sqlite.Conn
+	stmt   *sqlite.Stmt
+	flags  map[string]int // decoded from JSON: {"flag": 1}
+	hdrs   *email.Header
 }
 
 func (m *matchMessage) SeqNum() uint32    { return uint32(m.stmt.GetInt64("SeqNum")) }
@@ -442,7 +436,13 @@ func (m *matchMessage) Flag(name string) bool {
 		flags := make(map[string]int)
 		flagsStr := m.stmt.GetText("Flags")
 		if err := json.Unmarshal([]byte(flagsStr), &flags); err != nil {
-			m.logf("search match flag decode: %v", err)
+			m.logf("%s", db.Log{
+				Where:  "imapdb",
+				What:   "match-msg-flag-decode",
+				When:   time.Now(),
+				UserID: m.userID,
+				Err:    err,
+			}.String())
 			return false
 		}
 		m.flags = flags
@@ -456,7 +456,13 @@ func (m *matchMessage) Header(name string) string {
 		var err error
 		m.hdrs, err = spillbox.LoadMsgHdrs(m.conn, msgID)
 		if err != nil {
-			m.logf("error in search match header decode: %v", err)
+			m.logf("%s", db.Log{
+				Where:  "imapdb",
+				What:   "match-msg-header-decode",
+				When:   time.Now(),
+				UserID: m.userID,
+				Err:    err,
+			}.String())
 			return ""
 		}
 	}
@@ -942,7 +948,6 @@ func (m *mailbox) copyMsg(conn *sqlite.Conn, selStmt *sqlite.Stmt, newModSeq int
 	if err != nil {
 		return err
 	}
-	m.s.logf("Copy(%s -> %s) len(parts)=%d", srcMsgID, msgID, len(parts))
 	for i := range parts {
 		if err := spillbox.InsertPartSummary(conn, msgID, &parts[i]); err != nil {
 			return err
@@ -1089,7 +1094,6 @@ func (msg *message) LoadPart(partNum int) (err error) {
 }
 
 func (msg *message) SetSeen() error {
-	msg.s.logf("SetSeet msgid=%s", msg.msg.MsgID)
 	if msg.conn == nil {
 		return fmt.Errorf("imapdb: message connection invalidated")
 	}
