@@ -42,6 +42,8 @@ func main() {
 	flagSMTPAddr := flag.String("smtp_addr", ":25", "SMTP address")
 	flagMSAHostname := flag.String("msa_hostname", hostname, "MSA hostname")
 	flagMSAAddr := flag.String("msa_addr", ":465", "MSA (mail submission) address")
+	flagDNSHostname := flag.String("dns_hostname", hostname, "DNS hostname")
+	flagDNSAddr := flag.String("dns_addr", ":53", "DNS (TCP and UDP) address")
 	flagHTTPAddr := flag.String("http_addr", ":80", "address for HTTP (used by Let's Encrypt autocert)")
 
 	flag.Parse()
@@ -101,7 +103,7 @@ func main() {
 	s.CertManager = certManager
 	s.Logf = log.Printf
 
-	var imapAddrs, smtpAddrs, msaAddrs []spilldb.ServerAddr
+	var imapAddrs, smtpAddrs, msaAddrs, dnsAddrs []spilldb.ServerAddr
 
 	if *flagIMAPAddr != "" {
 		ln, err := net.Listen("tcp", *flagIMAPAddr)
@@ -135,6 +137,21 @@ func main() {
 			Hostname:  *flagMSAHostname,
 			Ln:        ln,
 			TLSConfig: tlsConfig,
+		})
+	}
+	if *flagDNSAddr != "" {
+		ln, err := net.Listen("tcp", *flagDNSAddr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pc, err := net.ListenPacket("tcp", *flagDNSAddr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		dnsAddrs = append(dnsAddrs, spilldb.ServerAddr{
+			Hostname: *flagDNSHostname,
+			PC:       pc,
+			Ln:       ln,
 		})
 	}
 
@@ -192,7 +209,7 @@ func main() {
 	}
 
 	go func() {
-		if err := s.Serve(smtpAddrs, msaAddrs, imapAddrs); err != nil {
+		if err := s.Serve(smtpAddrs, msaAddrs, imapAddrs, dnsAddrs); err != nil {
 			s.Logf("spilldb serve error: %v", err)
 		}
 	}()
