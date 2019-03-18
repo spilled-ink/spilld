@@ -28,6 +28,16 @@ CREATE TABLE IF NOT EXISTS UserAddresses (
 	FOREIGN KEY(UserID) REFERENCES Users(UserID)
 );
 
+CREATE TABLE IF NOT EXISTS DKIMRecords (
+	DomainName TEXT NOT NULL,
+	Selector   TEXT NOT NULL, -- "si1", "si2", etc
+	Algorithm  TEXT NOT NULL, -- "rsa"
+	PublicKey  TEXT NOT NULL, -- base64 contents of TXT record p= field
+	PrivateKey TEXT NOT NULL, -- "-----BEGIN RSA PRIVATE KEY-----"
+
+	PRIMARY KEY (DomainName, Selector)
+);
+
 CREATE TABLE IF NOT EXISTS Devices (
 	DeviceID        INTEGER PRIMARY KEY,
 	UserID          INTEGER NOT NULL,

@@ -21,6 +21,7 @@ import (
 	"spilled.ink/spilldb/boxmgmt"
 	"spilled.ink/spilldb/db"
 	"spilled.ink/spilldb/deliverer"
+	"spilled.ink/spilldb/dnsdb"
 	"spilled.ink/spilldb/honeypotdb"
 	"spilled.ink/spilldb/imapdb"
 	"spilled.ink/spilldb/localsender"
@@ -111,11 +112,12 @@ func New(filer *iox.Filer, dbDir string) (*Server, error) {
 
 type ServerAddr struct {
 	Hostname  string
-	Ln        net.Listener
+	Ln        net.Listener   // TCP
+	PC        net.PacketConn // UDP
 	TLSConfig *tls.Config
 }
 
-func (s *Server) Serve(smtp, msa, imap []ServerAddr) error {
+func (s *Server) Serve(smtp, msa, imap, dns []ServerAddr) error {
 	errCh := make(chan error, 8)
 
 	s.shutdownFnsMu.Lock()
@@ -188,12 +190,16 @@ func (s *Server) Serve(smtp, msa, imap []ServerAddr) error {
 		go func() {
 			defer wg.Done()
 			s.Logf("spilldb: SMTP %s, %s: starting", addr.Hostname, addr.Ln.Addr())
-			if err := s.serveSMTP(addr); err != nil {
+			err := s.serveSMTP(addr)
+			errStr := ""
+			if err != nil {
 				if err != smtpserver.ErrServerClosed {
 					errCh <- fmt.Errorf("spilldb SMTP %s: %v", addr.Hostname, err)
 				}
+				errStr = fmt.Sprintf(" (%v)", err)
 			}
-			s.Logf("spilldb: SMTP %s, %s: shutdown", addr.Hostname, addr.Ln.Addr())
+
+			s.Logf("spilldb: SMTP %s, %s: shutdown%s", addr.Hostname, addr.Ln.Addr(), errStr)
 		}()
 	}
 
@@ -218,6 +224,30 @@ func (s *Server) Serve(smtp, msa, imap []ServerAddr) error {
 			if err := s.serveIMAP(addr, i == 0); err != nil {
 				errCh <- fmt.Errorf("spilldb IMAP %s: %v", addr.Hostname, err)
 			}
+		}()
+	}
+
+	for _, addr := range dns {
+		addr := addr
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// TODO: put a String method on ServerAddr
+			addrStr := ""
+			if addr.Ln != nil {
+				addrStr = "TCP:" + addr.Ln.Addr().String()
+			}
+			if addr.PC != nil {
+				if addrStr != "" {
+					addrStr += "/"
+				}
+				addrStr += "UDP:" + addr.PC.LocalAddr().String()
+			}
+			s.Logf("spilldb: DNS %s, %s: starting", addr.Hostname, addrStr)
+			if err := s.serveDNS(addr); err != nil {
+				errCh <- fmt.Errorf("spilldb DNS %s: %v", addr.Hostname, err)
+			}
+			s.Logf("spilldb: DNS %s, %s: shutdown", addr.Hostname, addrStr)
 		}()
 	}
 
@@ -419,6 +449,19 @@ func (s *Server) serveIMAP(addr ServerAddr, first bool) error {
 		if err != imapserver.ErrServerClosed {
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *Server) serveDNS(addr ServerAddr) error {
+	dnsServer := dnsdb.DNS{
+		DB:   s.DB,
+		Logf: s.Logf,
+	}
+	s.addShutdownFn(dnsServer.Shutdown)
+
+	if err := dnsServer.Serve(addr.Ln, addr.PC); err != nil {
+		return err
 	}
 	return nil
 }
