@@ -54,6 +54,20 @@ func TestList(t *testing.T, server *TestServer) {
 	s.readExpectPrefix(`* LIST (\HasNoChildren \Trash) "/" Trash`)
 	s.readExpectPrefix(`01 OK`)
 
+	s.write(`01 LIST "" "%%"` + "\r\n")
+	s.readExpectPrefix(`* LIST (\HasNoChildren) "/" INBOX`)
+	s.readExpectPrefix(`* LIST (\HasNoChildren \Archive) "/" Archive`)
+	s.readExpectPrefix(`* LIST (\HasNoChildren \Drafts) "/" Drafts`)
+	s.readExpectPrefix(`* LIST (\HasNoChildren \Sent) "/" Sent`)
+	s.readExpectPrefix(`* LIST (\HasNoChildren \Junk) "/" Spam`)
+	s.readExpectPrefix(`* LIST (\HasNoChildren) "/" Subscriptions`)
+	s.readExpectPrefix(`* LIST (\HasNoChildren \Flagged) "/" TestFlagged`)
+	s.readExpectPrefix(`* LIST (\HasNoChildren \Trash) "/" Trash`)
+	s.readExpectPrefix(`01 OK`)
+
+	s.write(`01 LIST "" "%%/%%"` + "\r\n")
+	s.readExpectPrefix(`01 OK`)
+
 	s.write(`01 LIST "" "*" RETURN (SPECIAL-USE)` + "\r\n")
 	s.readExpectPrefix(`* LIST (\HasNoChildren) "/" INBOX`)
 	s.readExpectPrefix(`* LIST (\HasNoChildren \Archive) "/" Archive`)

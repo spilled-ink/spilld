@@ -990,7 +990,19 @@ func (c *Conn) cmdList() {
 		c.respondln("OK Success")
 		return
 	}
-	if len(cmd.List.ReferenceName) > 0 || string(cmd.List.MailboxGlob) != "*" {
+	if len(cmd.List.ReferenceName) == 0 && string(cmd.List.MailboxGlob) == "%/%" {
+		c.respondln("OK Success") // no subfolders yet
+		return
+	}
+	if len(cmd.List.ReferenceName) == 0 && string(cmd.List.MailboxGlob) == "%/%/%" {
+		c.respondln("OK Success") // no subfolders yet
+		return
+	}
+	if len(cmd.List.ReferenceName) == 0 && string(cmd.List.MailboxGlob) == "%/%/%/%" {
+		c.respondln("OK Success") // no subfolders yet
+		return
+	}
+	if len(cmd.List.ReferenceName) > 0 || (string(cmd.List.MailboxGlob) != "*" && string(cmd.List.MailboxGlob) != "%") {
 		c.respondln("BAD Not yet implemented")
 		return
 	}
