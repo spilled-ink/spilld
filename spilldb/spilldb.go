@@ -117,7 +117,7 @@ type ServerAddr struct {
 	TLSConfig *tls.Config
 }
 
-func (s *Server) Serve(smtp, msa, imap, dns []ServerAddr) error {
+func (s *Server) Serve(smtp, msa, msaStartTLS, imap, dns []ServerAddr) error {
 	errCh := make(chan error, 8)
 
 	s.shutdownFnsMu.Lock()
@@ -209,10 +209,23 @@ func (s *Server) Serve(smtp, msa, imap, dns []ServerAddr) error {
 		go func() {
 			defer wg.Done()
 			s.Logf("spilldb: MSA %s, %s: starting", addr.Hostname, addr.Ln.Addr())
-			if err := s.serveMSA(addr); err != nil {
+			if err := s.serveMSA(addr, false); err != nil {
 				errCh <- fmt.Errorf("spilldb MSA %s: %v", addr.Hostname, err)
 			}
 			s.Logf("spilldb: MSA %s, %s: shutdown", addr.Hostname, addr.Ln.Addr())
+		}()
+	}
+
+	for _, addr := range msaStartTLS {
+		addr := addr
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.Logf("spilldb: MSA StartTLS %s, %s: starting", addr.Hostname, addr.Ln.Addr())
+			if err := s.serveMSA(addr, true); err != nil {
+				errCh <- fmt.Errorf("spilldb MSA %s: %v", addr.Hostname, err)
+			}
+			s.Logf("spilldb: MSA StartTLS %s, %s: shutdown", addr.Hostname, addr.Ln.Addr())
 		}()
 	}
 
@@ -382,7 +395,7 @@ func (s *Server) serveSMTP(addr ServerAddr) error {
 	return nil
 }
 
-func (s *Server) serveMSA(addr ServerAddr) error {
+func (s *Server) serveMSA(addr ServerAddr, starttls bool) error {
 	tlsConfig, err := s.tlsConfig(addr)
 	if err != nil {
 		return err
@@ -411,7 +424,12 @@ func (s *Server) serveMSA(addr ServerAddr) error {
 	}
 	s.addShutdownFn(smtp.Shutdown)
 
-	if err := smtp.ServeTLS(addr.Ln); err != nil {
+	if starttls {
+		err = smtp.ServeSTARTTLS(addr.Ln)
+	} else {
+		err = smtp.ServeTLS(addr.Ln)
+	}
+	if err != nil {
 		if err != smtpserver.ErrServerClosed {
 			return err
 		}

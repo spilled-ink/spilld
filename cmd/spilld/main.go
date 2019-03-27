@@ -103,7 +103,7 @@ func main() {
 	s.CertManager = certManager
 	s.Logf = log.Printf
 
-	var imapAddrs, smtpAddrs, msaAddrs, dnsAddrs []spilldb.ServerAddr
+	var imapAddrs, smtpAddrs, msaAddrs, msaStartTLSAddrs, dnsAddrs []spilldb.ServerAddr
 
 	if *flagIMAPAddr != "" {
 		ln, err := net.Listen("tcp", *flagIMAPAddr)
@@ -209,7 +209,7 @@ func main() {
 	}
 
 	go func() {
-		if err := s.Serve(smtpAddrs, msaAddrs, imapAddrs, dnsAddrs); err != nil {
+		if err := s.Serve(smtpAddrs, msaAddrs, msaStartTLSAddrs, imapAddrs, dnsAddrs); err != nil {
 			s.Logf("spilldb serve error: %v", err)
 		}
 	}()
