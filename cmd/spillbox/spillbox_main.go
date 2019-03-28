@@ -11,7 +11,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -19,6 +21,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"spilled.ink/spilldb/db"
 
 	"crawshaw.io/iox"
 	"crawshaw.io/sqlite/sqlitex"
@@ -49,6 +53,7 @@ func main() {
 	ctx := context.Background()
 	filer = iox.NewFiler(0)
 
+	// Handle commands that do not require opening the spilldb.
 	switch flag.Arg(0) {
 	case "msg":
 		if err := cmdMsg(flag.Args()[1:]); err != nil {
@@ -56,8 +61,12 @@ func main() {
 			exit(1)
 		}
 		return
+	case "help":
+		fmt.Fprintf(os.Stderr, "TODO provide help. Sorry.\n") // TODO
+		exit(2)
 	}
 
+	// Assume from here on that the command requires opening the spilldb.
 	// TODO: print a message if we are creating dbdir
 	var err error
 	sdb, err = spilldb.New(filer, *flagDBDir)
@@ -74,10 +83,31 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s: unknown command '%s'\nRun '%s help' for details.\n", os.Args[0], flag.Arg(0), os.Args[0])
 		exit(1)
 	case "users":
-		if err := listUsers(); err != nil {
-			fmt.Fprintf(os.Stderr, "%s users: %v\n", os.Args[0], err)
+		arg := ""
+		if len(flag.Args()) > 1 {
+			arg = flag.Arg(1)
+		}
+		switch arg {
+		case "", "ls", "list":
+			if err := listUsers(); err != nil {
+				fmt.Fprintf(os.Stderr, "%s users: %v\n", os.Args[0], err)
+				exit(1)
+			}
+		case "add":
+			userID, tempPassword, err := addUser(flag.Args()[2:])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s add user: %v\n", os.Args[0], err)
+				exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "User ID:       %d\n", userID)
+			fmt.Fprintf(os.Stderr, "Temp Password: %s\n", tempPassword)
+			exit(0)
+
+		default:
+			fmt.Fprintf(os.Stderr, "%s: unknown command 'users %s'\nRun '%s help' for details.\n", os.Args[0], arg, os.Args[0])
 			exit(1)
 		}
+
 	case "user":
 		if len(flag.Args()) < 2 {
 			fmt.Fprintf(os.Stderr, "usage: %s [-dbdir path] user [userid or username] [user-command]\nRun '%s help user' for details.\n", os.Args[0], os.Args[0])
@@ -139,6 +169,64 @@ func listUsers() error {
 	}
 
 	return nil
+}
+
+type addUserFlags struct {
+	flagSet *flag.FlagSet
+	admin   *bool
+	name    *string
+	phone   *string
+	email   *string
+}
+
+func newAddUserFlags() *addUserFlags {
+	fs := flag.NewFlagSet("adduser", flag.ExitOnError)
+	return &addUserFlags{
+		flagSet: fs,
+		admin:   fs.Bool("admin", false, "the user is an account administrator"),
+		name:    fs.String("name", "", "user display name"),
+		phone:   fs.String("phone", "", "user phone number"),
+		email:   fs.String("email", "", "user email address (\"user@domain\")"),
+	}
+}
+
+func addUser(args []string) (userID int64, tempPassword string, err error) {
+	fs := newAddUserFlags()
+	if err := fs.flagSet.Parse(args); err != nil {
+		return 0, "", err
+	}
+
+	pwd := make([]byte, 6)
+	if _, err := rand.Read(pwd); err != nil {
+		return 0, "", err
+	}
+	tempPassword = base64.StdEncoding.EncodeToString(pwd)
+
+	ctx := context.Background()
+	conn := sdb.DB.Get(ctx)
+	defer sdb.DB.Put(conn)
+
+	details := db.UserDetails{
+		FullName:    *fs.name,
+		PhoneNumber: *fs.phone,
+		Admin:       *fs.admin,
+		EmailAddr:   *fs.email,
+		Password:    tempPassword,
+	}
+
+	userID, err = db.AddUser(conn, details)
+	if err != nil {
+		return 0, "", err
+	}
+	user, err := sdb.BoxMgmt.Open(ctx, userID)
+	if err != nil {
+		return 0, "", err
+	}
+	if err := user.Box.Init(ctx); err != nil {
+		return 0, "", err
+	}
+
+	return userID, tempPassword, nil
 }
 
 func importData(u *boxmgmt.User, sourcePath string) (err error) {
