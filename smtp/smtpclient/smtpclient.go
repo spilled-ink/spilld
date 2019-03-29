@@ -12,7 +12,8 @@ import (
 )
 
 type Client struct {
-	LocalHostname string // name of this host
+	LocalHostname string   // name of this host
+	LocalAddr     net.Addr // address on this host to send from
 	Resolver      *net.Resolver
 
 	limiter chan struct{} // per open connection
@@ -119,7 +120,8 @@ func (c *Client) send(ctx context.Context, mxAddr string, from string, recipient
 	defer func() { <-c.limiter }()
 
 	dialer := &net.Dialer{
-		Resolver: c.Resolver,
+		Resolver:  c.Resolver,
+		LocalAddr: c.LocalAddr,
 	}
 	tcpConn, err := dialer.DialContext(ctx, "tcp", mxAddr)
 	if err != nil {
@@ -142,16 +144,16 @@ func (c *Client) send(ctx context.Context, mxAddr string, from string, recipient
 	defer func() { close(done) }()
 
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true, // ugh
-		ServerName:         "spool.posticulous.com",
+		// TODO: do better for servers we know we can trust:
+		// https://starttls-everywhere.org/
+		InsecureSkipVerify: true,
+	}
+	if err := mxConn.Hello(c.LocalHostname); err != nil {
+		return allErr(err)
 	}
 	if err := mxConn.StartTLS(tlsConfig); err != nil {
 		return allErr(err)
 	}
-	// TODO: talk to servers without TLS
-	/*if err := mxConn.Hello(c.LocalHostname); err != nil {
-		return allErr(err)
-	}*/
 	if err := mxConn.Mail(from); err != nil {
 		return allErr(err)
 	}
