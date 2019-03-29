@@ -14,6 +14,7 @@ import (
 
 	"crawshaw.io/iox"
 	"spilled.ink/email"
+	"spilled.ink/email/dkim"
 	"spilled.ink/email/msgbuilder"
 	"spilled.ink/third_party/imf"
 )
@@ -44,6 +45,24 @@ func Cleave(filer *iox.Filer, src io.Reader) (*email.Msg, error) {
 	}
 
 	return msg, nil
+}
+
+func Sign(filer *iox.Filer, signer *dkim.Signer, dst io.Writer, src io.Reader) error {
+	msg, err := cleave(filer, src)
+	if err != nil {
+		return fmt.Errorf("msgcleaver: %v", err)
+	}
+	builder := msgbuilder.Builder{
+		Filer:         filer,
+		FillOutFields: true,
+		DKIM:          signer,
+	}
+	err = builder.Build(dst, msg)
+	msg.Close()
+	if err != nil {
+		return fmt.Errorf("msgcleaver: %v", err)
+	}
+	return nil
 }
 
 func cleave(filer *iox.Filer, src io.Reader) (msgPtr *email.Msg, err error) {
