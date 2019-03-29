@@ -6,11 +6,16 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"crawshaw.io/iox"
+	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
+	"spilled.ink/email/dkim"
+	"spilled.ink/email/msgcleaver"
 	"spilled.ink/smtp/smtpclient"
 	"spilled.ink/spilldb/db"
 )
@@ -29,18 +34,53 @@ type Deliverer struct {
 
 // NewDeliverer creates a Deliverer that periodically scans the DB and delivers emails.
 func NewDeliverer(dbpool *sqlitex.Pool, filer *iox.Filer) *Deliverer {
-	const localHostname = "spool.posticulous.com" // TODO
+	// TODO: principled source for constants
+	const localHostname = "mx.spilledinkmail.com"
+	const localAddr = "172.31.24.137"
+
 	ctx, cancelFn := context.WithCancel(context.Background())
-	return &Deliverer{
+	d := &Deliverer{
 		ctx:      ctx,
 		cancelFn: cancelFn,
 		done:     make(chan struct{}),
 
 		dbpool: dbpool,
 		filer:  filer,
-		client: smtpclient.NewClient(localHostname, 100), // TODO: principled source for constant
+		client: smtpclient.NewClient(localHostname, 100),
 		newmsg: make(chan struct{}, 1),
 	}
+	if ip := net.ParseIP(localAddr); isLocalAddr(ip) {
+		d.client.LocalAddr = &net.TCPAddr{IP: ip}
+	}
+	return d
+}
+
+func isLocalAddr(ip net.IP) bool {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return false
+		}
+		for _, addr := range addrs {
+			var local net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				local = v.IP
+			case *net.IPAddr:
+				local = v.IP
+			default:
+				continue
+			}
+			if local.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (d *Deliverer) Deliver(stagingID int64) {
@@ -102,9 +142,9 @@ func (d *Deliverer) recordDelivery(stagingID int64, res []smtpclient.Delivery) e
 	return nil
 }
 
-func (d *Deliverer) deliver(stagingID int64, from string, recipients []string, contents *iox.File, contentsSize int64) error {
+func (d *Deliverer) deliver(stagingID int64, from string, recipients []string, contents *iox.BufferFile) error {
 	// TODO: remove error return value from Send
-	res, _ := d.client.Send(d.ctx, from, recipients, contents, contentsSize)
+	res, _ := d.client.Send(d.ctx, from, recipients, contents, contents.Size())
 
 	if err := d.recordDelivery(stagingID, res); err != nil {
 		return err
@@ -159,11 +199,10 @@ func (d *Deliverer) deliver(stagingID int64, from string, recipients []string, c
 }
 
 type deliveryData struct {
-	stagingID    int64
-	from         string
-	recipients   []string
-	contents     *iox.File
-	contentsSize int64
+	stagingID  int64
+	from       string
+	recipients []string
+	contents   *iox.BufferFile
 }
 
 func (d *Deliverer) collectToDeliver() (deliveries []deliveryData, more bool, err error) {
@@ -199,12 +238,8 @@ func (d *Deliverer) collectToDeliver() (deliveries []deliveryData, more bool, er
 		if err != nil {
 			return nil, false, err
 		}
-		f, err := d.filer.TempFile("", fmt.Sprintf("deliverer-%d-", stagingID), ".txt")
-		if err != nil {
-			b.Close()
-			return nil, false, err
-		}
-		n, err := io.Copy(f, b)
+		f := d.filer.BufferFile(0)
+		_, err = io.Copy(f, b)
 		b.Close()
 		if err != nil {
 			f.Close()
@@ -214,9 +249,31 @@ func (d *Deliverer) collectToDeliver() (deliveries []deliveryData, more bool, er
 			f.Close()
 			return nil, false, err
 		}
+
+		// It is very messy to be doing message modification here.
+		// Do it earlier, in a Processor-like object for incoming
+		// mail submission.
+		signer, err := d.findSigner(conn, stagingID)
+		if err != nil {
+			return nil, false, err
+		}
+		if signer != nil {
+			dst := d.filer.BufferFile(0)
+			err := msgcleaver.Sign(d.filer, signer, dst, f)
+			f.Close()
+			if err != nil {
+				dst.Close()
+				return nil, false, err
+			}
+			if _, err := dst.Seek(0, 0); err != nil {
+				dst.Close()
+				return nil, false, fmt.Errorf("final dst seek: %v", err)
+			}
+			f = dst
+		}
+
 		d := toDeliver[stagingID]
 		d.contents = f
-		d.contentsSize = n
 		toDeliver[stagingID] = d
 	}
 
@@ -235,6 +292,39 @@ func (d *Deliverer) collectToDeliver() (deliveries []deliveryData, more bool, er
 		deliveries = append(deliveries, d)
 	}
 	return deliveries, count == limit, nil
+}
+
+func (d *Deliverer) findSigner(conn *sqlite.Conn, stagingID int64) (*dkim.Signer, error) {
+	stmt := conn.Prep("SELECT Sender FROM Msgs WHERE StagingID = $stagingID;")
+	stmt.SetInt64("$stagingID", stagingID)
+	senderAddr, err := sqlitex.ResultText(stmt)
+	if err != nil {
+		return nil, err
+	}
+	i := strings.LastIndexByte(senderAddr, '@')
+	if i == -1 || i == len(senderAddr)-1 {
+		return nil, fmt.Errorf("signer: bad sender: %q", senderAddr)
+	}
+	domain := senderAddr[i+1:]
+
+	stmt = conn.Prep("SELECT Selector, PrivateKey FROM DKIMRecords WHERE DomainName = $domain AND Current = TRUE;")
+	stmt.SetText("$domain", domain)
+	if hasNext, err := stmt.Step(); err != nil {
+		return nil, err
+	} else if !hasNext {
+		return nil, nil
+	}
+	selector := stmt.GetText("Selector")
+	key := []byte(stmt.GetText("PrivateKey"))
+	stmt.Reset()
+
+	signer, err := dkim.NewSigner(key)
+	if err != nil {
+		return nil, err
+	}
+	signer.Domain = domain
+	signer.Selector = selector
+	return signer, nil
 }
 
 func (d *Deliverer) Run() error {
@@ -270,7 +360,7 @@ func (d *Deliverer) Run() error {
 		for _, data := range deliveries {
 			wg.Add(1)
 			go func(data deliveryData) {
-				err := d.deliver(data.stagingID, data.from, data.recipients, data.contents, data.contentsSize)
+				err := d.deliver(data.stagingID, data.from, data.recipients, data.contents)
 				if err != nil {
 					// TODO plumb logging
 					log.Printf("deliver %v: %v", data.stagingID, err)
