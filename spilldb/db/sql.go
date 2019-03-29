@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS UserAddresses (
 CREATE TABLE IF NOT EXISTS DKIMRecords (
 	DomainName TEXT NOT NULL,
 	Selector   TEXT NOT NULL, -- "si1", "si2", etc
+	Current    BOOLEAN,       -- primary key to use for signing messages
 	Algorithm  TEXT NOT NULL, -- "rsa"
 	PublicKey  TEXT NOT NULL, -- base64 contents of TXT record p= field
 	PrivateKey TEXT NOT NULL, -- "-----BEGIN RSA PRIVATE KEY-----"
