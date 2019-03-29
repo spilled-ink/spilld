@@ -58,7 +58,9 @@ func (b *Builder) write(w io.Writer, msg *email.Msg) error {
 		return err
 	}
 
-	if b.DKIM != nil {
+	// TODO: in relay forwarding, a message can have multiple
+	// DKIM-Signatures. Do any of those cases apply here?
+	if b.DKIM != nil && len(hdr.Get("DKIM-Signature")) == 0 {
 		sig, err := b.DKIM.Sign(stringHeaders{hdr}, bufio.NewReader(body))
 		if err != nil {
 			return err
