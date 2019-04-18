@@ -1,6 +1,6 @@
 # spilled.ink
 
-[Spilled.ink](spilled.ink) is a new take on open source email infrastructure.
+[Spilled.ink](https://spilled.ink/) is a new take on open source email infrastructure.
 
 This repository contains the spilld SMTP and IMAP server,
 built around a new SQLite-based storage format, spillbox.
